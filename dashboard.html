@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Honeypot System - Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-card .label {
+            color: #999;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .conversation-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.scammer {
+            background: #ffe0e0;
+            border-left: 4px solid #dc3545;
+        }
+
+        .message.ai {
+            background: #e0f0ff;
+            border-left: 4px solid #667eea;
+        }
+
+        .message .role {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.85em;
+            text-transform: uppercase;
+        }
+
+        .message.scammer .role {
+            color: #dc3545;
+        }
+
+        .message.ai .role {
+            color: #667eea;
+        }
+
+        .intel-list {
+            list-style: none;
+        }
+
+        .intel-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .intel-item .type {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-size: 0.85em;
+        }
+
+        .intel-item .values {
+            color: #333;
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            word-break: break-all;
+        }
+
+        .threat-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .threat-critical {
+            background: #dc3545;
+            color: white;
+        }
+
+        .threat-high {
+            background: #fd7e14;
+            color: white;
+        }
+
+        .threat-medium {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .threat-low {
+            background: #28a745;
+            color: white;
+        }
+
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button-secondary {
+            background: #6c757d;
+        }
+
+        .button-secondary:hover {
+            background: #5a6268;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            font-family: inherit;
+        }
+
+        .input-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+
+        .scam-type-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            background: #764ba2;
+            color: white;
+            border-radius: 15px;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const API_BASE = 'http://localhost:8000/api';
+
+        function Dashboard() {
+            const [stats, setStats] = useState(null);
+            const [currentConversation, setCurrentConversation] = useState(null);
+            const [scamType, setScamType] = useState('phishing');
+            const [customMessage, setCustomMessage] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            useEffect(() => {
+                fetchStats();
+                const interval = setInterval(fetchStats, 5000);
+                return () => clearInterval(interval);
+            }, []);
+
+            const fetchStats = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/dashboard/stats`);
+                    const data = await response.json();
+                    setStats(data);
+                } catch (error) {
+                    console.error('Error fetching stats:', error);
+                }
+            };
+
+            const simulateScam = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/simulate/scam?scam_type=${scamType}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    setCurrentConversation(data.full_conversation);
+                    await fetchStats();
+                } catch (error) {
+                    console.error('Error simulating scam:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const sendCustomMessage = async () => {
+                if (!customMessage.trim()) return;
+                
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/conversation/message`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: customMessage,
+                            conversation_id: currentConversation?.id
+                        })
+                    });
+                    const data = await response.json();
+                    
+                    // Fetch full conversation
+                    const convResponse = await fetch(`${API_BASE}/conversation/${data.conversation_id}`);
+                    const convData = await convResponse.json();
+                    setCurrentConversation(convData);
+                    setCustomMessage('');
+                    await fetchStats();
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const exportIntelligence = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/intelligence/export`);
+                    const data = await response.json();
+                    
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `honeypot-intelligence-${Date.now()}.json`;
+                    a.click();
+                } catch (error) {
+                    console.error('Error exporting intelligence:', error);
+                }
+            };
+
+            return (
+                <div className="dashboard">
+                    <div className="header">
+                        <h1>
+                            🍯 AI Honeypot System
+                            <span className="scam-type-badge">LIVE</span>
+                        </h1>
+                        <p>Autonomous Scam Detection & Intelligence Extraction Platform</p>
+                    </div>
+
+                    {stats && (
+                        <div className="stats-grid">
+                            <div className="stat-card">
+                                <h3>Total Conversations</h3>
+                                <div className="value">{stats.total_conversations}</div>
+                                <div className="label">All interactions</div>
+                            </div>
+                            <div className="stat-card">
+                                <h3>Scams Detected</h3>
+                                <div className="value">{stats.scam_conversations}</div>
+                                <div className="label">{stats.detection_rate.toFixed(1)}% detection rate</div>
+                            </div>
+                            <div className="stat-card">
+                                <h3>Bank Accounts</h3>
+                                <div className="value">{stats.extracted_intelligence.bank_accounts}</div>
+                                <div className="label">Extracted</div>
+                            </div>
+                            <div className="stat-card">
+                                <h3>UPI IDs</h3>
+                                <div className="value">{stats.extracted_intelligence.upi_ids}</div>
+                                <div className="label">Captured</div>
+                            </div>
+                            <div className="stat-card">
+                                <h3>Phishing Links</h3>
+                                <div className="value">{stats.extracted_intelligence.phishing_links}</div>
+                                <div className="label">Identified</div>
+                            </div>
+                            <div className="stat-card">
+                                <h3>Phone Numbers</h3>
+                                <div className="value">{stats.extracted_intelligence.phone_numbers}</div>
+                                <div className="label">Collected</div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="content-grid">
+                        <div className="card">
+                            <h2>🎭 Simulate Scam Conversation</h2>
+                            
+                            <div className="input-group">
+                                <label>Scam Type:</label>
+                                <select value={scamType} onChange={(e) => setScamType(e.target.value)}>
+                                    <option value="phishing">Banking Phishing</option>
+                                    <option value="lottery">Lottery/Prize</option>
+                                    <option value="tech_support">Tech Support</option>
+                                    <option value="investment">Investment Fraud</option>
+                                    <option value="romance">Romance Scam</option>
+                                    <option value="job_offer">Fake Job Offer</option>
+                                    <option value="impersonation">Govt. Impersonation</option>
+                                </select>
+                            </div>
+
+                            <button className="button" onClick={simulateScam} disabled={loading}>
+                                {loading ? '🔄 Simulating...' : '▶️ Start Simulation'}
+                            </button>
+                            <button className="button button-secondary" onClick={exportIntelligence}>
+                                💾 Export Intelligence
+                            </button>
+
+                            <div style={{marginTop: '20px'}}>
+                                <h3 style={{marginBottom: '10px'}}>Or Send Custom Message:</h3>
+                                <div className="input-group">
+                                    <textarea
+                                        value={customMessage}
+                                        onChange={(e) => setCustomMessage(e.target.value)}
+                                        placeholder="Type a scam message to test the AI agent..."
+                                    />
+                                </div>
+                                <button className="button" onClick={sendCustomMessage} disabled={loading}>
+                                    📤 Send Message
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <h2>💬 Live Conversation</h2>
+                            {currentConversation ? (
+                                <div className="conversation-box">
+                                    {currentConversation.messages.map((msg, idx) => (
+                                        <div key={idx} className={`message ${msg.role === 'scammer' ? 'scammer' : 'ai'}`}>
+                                            <div className="role">
+                                                {msg.role === 'scammer' ? '🎭 Scammer' : '🤖 AI Agent'}
+                                            </div>
+                                            <div>{msg.content}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="loading">
+                                    👆 Start a simulation to see the AI agent in action
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <h2>🔍 Extracted Intelligence</h2>
+                        {currentConversation && Object.keys(currentConversation.extracted_data).length > 0 ? (
+                            <ul className="intel-list">
+                                {Object.entries(currentConversation.extracted_data).map(([type, values], idx) => (
+                                    <li key={idx} className="intel-item">
+                                        <div className="type">{type.replace(/_/g, ' ')}</div>
+                                        <div className="values">
+                                            {Array.isArray(values) ? values.join(', ') : values}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="loading">
+                                No intelligence extracted yet. Start a conversation to capture scammer data.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<Dashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>
