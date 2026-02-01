@@ -1,29 +1,44 @@
 """
-AI Honeypot System for Scam Detection & Intelligence Extraction
-Main FastAPI Application
+Main FastAPI Application - Honeypot System
+STRICTLY COMPLIANT WITH OFFICIAL HACKATHON SPECIFICATION
+
+This is the PRIMARY API that receives requests from the GUVI evaluation platform.
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Security, Depends
+from fastapi import FastAPI, HTTPException, Security, Depends, Header
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import List, Dict, Optional
 import uvicorn
-import json
-from datetime import datetime
-import uuid
-import asyncio
-from collections import defaultdict
+import logging
+from typing import Optional
 
+# Import models (official spec)
+from models import (
+    HoneypotRequest,
+    HoneypotResponse,
+    ErrorResponse,
+    MessageContent
+)
+
+# Import components
+from session_manager import session_manager
 from scam_detector import ScamDetector
 from ai_agent import AIHoneypotAgent
 from intelligence_extractor import IntelligenceExtractor
-from mock_scammer import MockScammer
+from callback import send_callback_with_retry
 
-app = FastAPI(title="AI Honeypot System", version="1.0.0")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# CORS middleware for frontend
+# Initialize FastAPI app
+app = FastAPI(
+    title="Agentic Honeypot System",
+    description="AI-powered honeypot for scam detection and intelligence extraction",
+    version="2.0.0"
+)
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,339 +47,307 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global storage (in production, use database)
-conversations = {}
-intelligence_db = []
+# ============================================================================
+# AUTHENTICATION
+# ============================================================================
 
-# Security
-API_KEY_NAME = "X-API-Key"
-API_KEY = "honeypot-secret-key-123"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+# API Key authentication
+API_KEY_NAME = "x-api-key"
+API_KEY = "honeypot-secret-key-123"  # In production: use environment variable
 
-async def get_api_key(api_key_header: str = Security(api_key_header)):
-    if api_key_header == API_KEY:
-        return api_key_header
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+
+async def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    """
+    Verify API key from request header.
+    Accepts both 'x-api-key' and 'X-API-Key' (case-insensitive).
+    """
+    if x_api_key == API_KEY:
+        return x_api_key
+
     raise HTTPException(
         status_code=403,
-        detail="Could not validate credentials"
+        detail="Invalid or missing API key"
     )
 
-# Initialize components
+
+# ============================================================================
+# INITIALIZE COMPONENTS
+# ============================================================================
+
 scam_detector = ScamDetector()
 ai_agent = AIHoneypotAgent()
 intel_extractor = IntelligenceExtractor()
-mock_scammer = MockScammer()
 
 
-class MessageRequest(BaseModel):
-    message: str
-    conversation_id: Optional[str] = None
+# ============================================================================
+# PRIMARY API ENDPOINT (Official Specification)
+# ============================================================================
+
+@app.post(
+    "/api/honeypot/message",
+    response_model=HoneypotResponse,
+    responses={
+        200: {"model": HoneypotResponse},
+        400: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    }
+)
+async def process_message(
+    request: HoneypotRequest,
+    api_key: str = Depends(verify_api_key)
+) -> HoneypotResponse:
+    """
+    PRIMARY API ENDPOINT - Receives messages from GUVI evaluation platform.
+
+    OFFICIAL SPECIFICATION COMPLIANCE:
+    - Request: sessionId, message (object), conversationHistory (array), metadata (optional)
+    - Response: ONLY status + reply (no extra fields)
+    - Multi-turn: conversationHistory empty = first message, non-empty = follow-up
+    - Callback: Triggered after scam detected + sufficient engagement
+
+    Args:
+        request: HoneypotRequest with official schema
+        api_key: Validated API key
+
+    Returns:
+        HoneypotResponse with status='success' and agent reply
+    """
+
+    try:
+        session_id = request.sessionId
+        current_message = request.message
+        conversation_history = request.conversationHistory
+
+        logger.info(f"Processing message for session {session_id}")
+
+        # ====================================================================
+        # STEP 1: Session Management
+        # ====================================================================
+
+        session = session_manager.get_or_create_session(session_id)
+
+        # Check if first message
+        is_first_message = session_manager.is_first_message(conversation_history)
+
+        # Calculate total messages
+        total_messages = session_manager.calculate_total_messages(conversation_history)
+
+        logger.info(
+            f"Session {session_id}: "
+            f"Message {total_messages} "
+            f"(First: {is_first_message})"
+        )
+
+        # ====================================================================
+        # STEP 2: Scam Detection
+        # ====================================================================
+
+        scam_result = scam_detector.analyze(current_message.text)
+
+        # Update session with scam status
+        session_manager.update_session(
+            session_id,
+            is_scam=scam_result["is_scam"],
+            scam_type=scam_result.get("scam_type", "unknown"),
+            confidence_score=scam_result.get("confidence_score", 0.0),
+            message_count=total_messages
+        )
+
+        logger.info(
+            f"Scam detection for {session_id}: "
+            f"is_scam={scam_result['is_scam']}, "
+            f"type={scam_result.get('scam_type')}, "
+            f"confidence={scam_result.get('confidence_score')}"
+        )
+
+        # ====================================================================
+        # STEP 3: Intelligence Extraction
+        # ====================================================================
+
+        extracted = intel_extractor.extract(current_message.text)
+
+        if extracted:
+            # Merge with existing intelligence
+            current_intel = session.extracted_intelligence
+
+            for key, value in extracted.items():
+                if key.startswith("_"):  # Skip metadata
+                    continue
+
+                if key not in current_intel:
+                    current_intel[key] = []
+
+                if isinstance(value, list):
+                    current_intel[key].extend(value)
+                else:
+                    current_intel[key].append(value)
+
+            # Deduplicate
+            for key in current_intel:
+                if isinstance(current_intel[key], list):
+                    current_intel[key] = list(set(current_intel[key]))
+
+            session_manager.update_session(
+                session_id,
+                extracted_intelligence=current_intel
+            )
+
+            logger.info(f"Intelligence extracted for {session_id}: {list(extracted.keys())}")
+
+        # Add suspicious keywords from scam detector
+        if scam_result.get("indicators"):
+            if "suspicious_keywords" not in session.extracted_intelligence:
+                session.extracted_intelligence["suspicious_keywords"] = []
+
+            session.extracted_intelligence["suspicious_keywords"].extend(
+                scam_result["indicators"][:5]  # Top 5 indicators
+            )
+            session.extracted_intelligence["suspicious_keywords"] = list(
+                set(session.extracted_intelligence["suspicious_keywords"])
+            )
+
+        # ====================================================================
+        # STEP 4: Agent Response Generation
+        # ====================================================================
+
+        if session.is_scam:
+            # Agent activated - generate contextual response
+
+            # Convert conversationHistory to agent format
+            agent_history = []
+            for msg in conversation_history:
+                agent_history.append({
+                    "role": msg.sender,
+                    "content": msg.text,
+                    "timestamp": msg.timestamp
+                })
+
+            # Add current message
+            agent_history.append({
+                "role": current_message.sender,
+                "content": current_message.text,
+                "timestamp": current_message.timestamp
+            })
+
+            # Generate response
+            agent_response = await ai_agent.generate_response(
+                message=current_message.text,
+                conversation_history=agent_history,
+                scam_type=session.scam_type
+            )
+
+            logger.info(f"Agent response generated for {session_id}")
+
+        else:
+            # No scam detected - neutral response
+            agent_response = "Thank you for your message. How can I help you today?"
+            logger.info(f"Neutral response for {session_id} (no scam detected)")
+
+        # ====================================================================
+        # STEP 5: Callback Trigger Check
+        # ====================================================================
+
+        if session_manager.should_send_callback(session_id, min_messages=5):
+            logger.info(f"Callback conditions met for {session_id}")
+
+            # Send callback
+            callback_success = send_callback_with_retry(
+                session_id=session_id,
+                scam_detected=session.is_scam,
+                total_messages=total_messages,
+                extracted_intelligence=session.extracted_intelligence,
+                scam_type=session.scam_type,
+                max_retries=3
+            )
+
+            if callback_success:
+                session_manager.mark_callback_sent(session_id)
+                logger.info(f"✅ Callback sent and marked for {session_id}")
+            else:
+                logger.error(f"❌ Callback failed for {session_id}")
+
+        # ====================================================================
+        # STEP 6: Return Official Response Format
+        # ====================================================================
+
+        # CRITICAL: Return ONLY status and reply (no extra fields)
+        return HoneypotResponse(
+            status="success",
+            reply=agent_response
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing message for {session_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
-class ConversationResponse(BaseModel):
-    conversation_id: str
-    is_scam: bool
-    confidence_score: float
-    ai_response: str
-    extracted_intelligence: Dict
-    conversation_history: List[Dict]
-
+# ============================================================================
+# UTILITY ENDPOINTS (For testing/monitoring - not part of official spec)
+# ============================================================================
 
 @app.get("/")
 async def root():
+    """Root endpoint - system info"""
     return {
-        "message": "AI Honeypot System Active",
+        "service": "Agentic Honeypot System",
+        "version": "2.0.0",
+        "status": "active",
+        "spec_compliant": True,
         "endpoints": {
-            "start_conversation": "/api/conversation/start",
-            "send_message": "/api/conversation/message",
-            "get_intelligence": "/api/intelligence",
-            "simulate_scam": "/api/simulate/scam",
-            "dashboard_stats": "/api/dashboard/stats"
+            "primary": "/api/honeypot/message (POST)",
+            "health": "/health (GET)",
+            "stats": "/stats (GET)"
         }
     }
 
 
-@app.post("/api/conversation/start")
-async def start_conversation():
-    """Start a new conversation session"""
-    conversation_id = str(uuid.uuid4())
-    conversations[conversation_id] = {
-        "id": conversation_id,
-        "started_at": datetime.utcnow().isoformat(),
-        "messages": [],
-        "is_scam": False,
-        "confidence_score": 0.0,
-        "extracted_data": {},
-        "status": "active"
-    }
-    return {"conversation_id": conversation_id, "message": "Conversation started"}
-
-
-@app.post("/api/conversation/message", response_model=ConversationResponse)
-async def process_message(request: MessageRequest, api_key: str = Depends(get_api_key)):
-    """Process incoming message and generate AI response"""
-
-    # Create new conversation if needed
-    if not request.conversation_id or request.conversation_id not in conversations:
-        conversation_id = str(uuid.uuid4())
-        conversations[conversation_id] = {
-            "id": conversation_id,
-            "started_at": datetime.utcnow().isoformat(),
-            "messages": [],
-            "is_scam": False,
-            "confidence_score": 0.0,
-            "extracted_data": {},
-            "status": "active"
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "components": {
+            "scam_detector": "operational",
+            "ai_agent": "operational",
+            "intelligence_extractor": "operational",
+            "callback_dispatcher": "operational"
         }
-    else:
-        conversation_id = request.conversation_id
-
-    conversation = conversations[conversation_id]
-
-    # Step 1: Detect if message is a scam
-    scam_result = scam_detector.analyze(request.message)
-    conversation["is_scam"] = scam_result["is_scam"]
-    conversation["confidence_score"] = scam_result["confidence_score"]
-    conversation["scam_type"] = scam_result.get("scam_type", "unknown")
-
-    # Add incoming message to history
-    conversation["messages"].append({
-        "role": "scammer",
-        "content": request.message,
-        "timestamp": datetime.utcnow().isoformat()
-    })
-
-    # Step 2: Extract intelligence from scammer message
-    extracted = intel_extractor.extract(request.message)
-    if extracted:
-        # Merge with existing extracted data
-        for key, value in extracted.items():
-            if key not in conversation["extracted_data"]:
-                conversation["extracted_data"][key] = []
-            if isinstance(value, list):
-                conversation["extracted_data"][key].extend(value)
-            else:
-                conversation["extracted_data"][key].append(value)
-
-    # Step 3: Generate AI response if it's a scam
-    if conversation["is_scam"]:
-        ai_response = await ai_agent.generate_response(
-            message=request.message,
-            conversation_history=conversation["messages"],
-            scam_type=conversation["scam_type"]
-        )
-    else:
-        ai_response = "Thank you for your message. How can I help you?"
-
-    # Add AI response to history
-    conversation["messages"].append({
-        "role": "ai_agent",
-        "content": ai_response,
-        "timestamp": datetime.utcnow().isoformat()
-    })
-
-    # Step 4: Save intelligence if significant data extracted
-    if conversation["is_scam"] and conversation["extracted_data"]:
-        intelligence_record = {
-            "conversation_id": conversation_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "scam_type": conversation["scam_type"],
-            "confidence_score": conversation["confidence_score"],
-            "extracted_intelligence": conversation["extracted_data"],
-            "message_count": len(conversation["messages"]),
-            "threat_level": _calculate_threat_level(conversation["extracted_data"])
-        }
-        intelligence_db.append(intelligence_record)
-
-    return ConversationResponse(
-        conversation_id=conversation_id,
-        is_scam=conversation["is_scam"],
-        confidence_score=conversation["confidence_score"],
-        ai_response=ai_response,
-        extracted_intelligence=conversation["extracted_data"],
-        conversation_history=conversation["messages"]
-    )
+    }
 
 
-@app.get("/api/conversation/{conversation_id}")
-async def get_conversation(conversation_id: str):
-    """Get full conversation details"""
-    if conversation_id not in conversations:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return conversations[conversation_id]
-
-
-@app.get("/api/intelligence")
-async def get_intelligence():
-    """Get all extracted intelligence"""
+@app.get("/stats")
+async def get_stats(api_key: str = Depends(verify_api_key)):
+    """
+    Get session statistics.
+    Requires API key authentication.
+    """
+    stats = session_manager.get_session_stats()
     return {
-        "total_records": len(intelligence_db),
-        "intelligence": intelligence_db
+        "status": "success",
+        "statistics": stats
     }
 
 
-@app.get("/api/intelligence/export")
-async def export_intelligence():
-    """Export intelligence in structured JSON format"""
-    return JSONResponse(
-        content={
-            "exported_at": datetime.utcnow().isoformat(),
-            "total_conversations": len([c for c in conversations.values() if c["is_scam"]]),
-            "total_intelligence_records": len(intelligence_db),
-            "intelligence_data": intelligence_db
-        },
-        media_type="application/json"
-    )
-
-
-@app.post("/api/simulate/scam")
-async def simulate_scam_conversation(scam_type: str = "phishing", api_key: str = Depends(get_api_key)):
-    """Simulate a full scam conversation for demo purposes"""
-
-    conversation_id = str(uuid.uuid4())
-    conversations[conversation_id] = {
-        "id": conversation_id,
-        "started_at": datetime.utcnow().isoformat(),
-        "messages": [],
-        "is_scam": True,
-        "confidence_score": 0.95,
-        "extracted_data": {},
-        "status": "simulated",
-        "scam_type": scam_type
-    }
-
-    # Get simulated scam scenario
-    scenario = mock_scammer.get_scenario(scam_type)
-    conversation_log = []
-
-    for i, scammer_msg in enumerate(scenario["messages"]):
-        # Add scammer message
-        conversations[conversation_id]["messages"].append({
-            "role": "scammer",
-            "content": scammer_msg,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-        # Extract intelligence
-        extracted = intel_extractor.extract(scammer_msg)
-        if extracted:
-            for key, value in extracted.items():
-                if key not in conversations[conversation_id]["extracted_data"]:
-                    conversations[conversation_id]["extracted_data"][key] = []
-                if isinstance(value, list):
-                    conversations[conversation_id]["extracted_data"][key].extend(value)
-                else:
-                    conversations[conversation_id]["extracted_data"][key].append(value)
-
-        # Generate AI response
-        ai_response = await ai_agent.generate_response(
-            message=scammer_msg,
-            conversation_history=conversations[conversation_id]["messages"],
-            scam_type=scam_type
-        )
-
-        conversations[conversation_id]["messages"].append({
-            "role": "ai_agent",
-            "content": ai_response,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-        conversation_log.append({
-            "turn": i + 1,
-            "scammer": scammer_msg,
-            "ai_agent": ai_response
-        })
-
-        # Simulate delay
-        await asyncio.sleep(0.5)
-
-    # Save intelligence
-    intelligence_record = {
-        "conversation_id": conversation_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "scam_type": scam_type,
-        "confidence_score": 0.95,
-        "extracted_intelligence": conversations[conversation_id]["extracted_data"],
-        "message_count": len(conversations[conversation_id]["messages"]),
-        "threat_level": _calculate_threat_level(conversations[conversation_id]["extracted_data"])
-    }
-    intelligence_db.append(intelligence_record)
-
-    return {
-        "conversation_id": conversation_id,
-        "scam_type": scam_type,
-        "conversation_log": conversation_log,
-        "extracted_intelligence": conversations[conversation_id]["extracted_data"],
-        "full_conversation": conversations[conversation_id]
-    }
-
-
-@app.get("/api/dashboard/stats")
-async def get_dashboard_stats():
-    """Get dashboard statistics"""
-    total_conversations = len(conversations)
-    scam_conversations = len([c for c in conversations.values() if c["is_scam"]])
-
-    # Count extracted data types
-    total_bank_accounts = sum(len(c["extracted_data"].get("bank_accounts", []))
-                              for c in conversations.values())
-    total_upi_ids = sum(len(c["extracted_data"].get("upi_ids", []))
-                       for c in conversations.values())
-    total_phishing_links = sum(len(c["extracted_data"].get("phishing_links", []))
-                              for c in conversations.values())
-    total_phone_numbers = sum(len(c["extracted_data"].get("phone_numbers", []))
-                             for c in conversations.values())
-
-    # Scam type distribution
-    scam_types = defaultdict(int)
-    for c in conversations.values():
-        if c["is_scam"]:
-            scam_type = c.get("scam_type", "unknown")
-            scam_types[scam_type] += 1
-
-    return {
-        "total_conversations": total_conversations,
-        "scam_conversations": scam_conversations,
-        "legitimate_conversations": total_conversations - scam_conversations,
-        "detection_rate": (scam_conversations / total_conversations * 100) if total_conversations > 0 else 0,
-        "extracted_intelligence": {
-            "bank_accounts": total_bank_accounts,
-            "upi_ids": total_upi_ids,
-            "phishing_links": total_phishing_links,
-            "phone_numbers": total_phone_numbers
-        },
-        "scam_type_distribution": dict(scam_types),
-        "recent_intelligence": intelligence_db[-5:] if intelligence_db else []
-    }
-
-
-def _calculate_threat_level(extracted_data: Dict) -> str:
-    """Calculate threat level based on extracted data"""
-    score = 0
-
-    if extracted_data.get("bank_accounts"):
-        score += 3
-    if extracted_data.get("upi_ids"):
-        score += 3
-    if extracted_data.get("phishing_links"):
-        score += 2
-    if extracted_data.get("phone_numbers"):
-        score += 1
-    if extracted_data.get("email_addresses"):
-        score += 1
-
-    if score >= 6:
-        return "critical"
-    elif score >= 4:
-        return "high"
-    elif score >= 2:
-        return "medium"
-    else:
-        return "low"
-
+# ============================================================================
+# APPLICATION STARTUP
+# ============================================================================
 
 if __name__ == "__main__":
-    print("🚀 Starting AI Honeypot System...")
-    print("📊 Dashboard will be available at: http://localhost:8000")
-    print("📖 API Docs: http://localhost:8000/docs")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    logger.info("🚀 Starting Agentic Honeypot System...")
+    logger.info("📊 Primary API: POST /api/honeypot/message")
+    logger.info("📖 API Docs: http://localhost:8000/docs")
+    logger.info("🔐 API Key Required: x-api-key header")
+    logger.info("✅ SPEC COMPLIANT: Official GUVI hackathon format")
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )
