@@ -19,7 +19,7 @@ class MessageContent(BaseModel):
     """
     sender: str = Field(..., description="Either 'scammer' or 'user'")
     text: str = Field(..., description="Message content")
-    timestamp: str = Field(..., description="ISO-8601 formatted timestamp")
+    timestamp: int = Field(..., description="Epoch time in milliseconds")
 
 
 class Metadata(BaseModel):

@@ -31,7 +31,7 @@ def test_first_message():
         "message": {
             "sender": "scammer",
             "text": "URGENT! Your bank account will be blocked today. Click here to verify immediately: http://bit.ly/fake123",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": int(datetime.utcnow().timestamp() * 1000)
         },
         "conversationHistory": [],  # EMPTY for first message
         "metadata": {
@@ -79,7 +79,7 @@ def test_follow_up_message(first_request):
         "message": {
             "sender": "scammer",
             "text": "Share your account number and UPI ID to avoid suspension. Use UPI: scammer@paytm",
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": int(datetime.utcnow().timestamp() * 1000)
         },
         "conversationHistory": [
             # Include previous messages
@@ -87,7 +87,7 @@ def test_follow_up_message(first_request):
             {
                 "sender": "user",
                 "text": "Why will my account be blocked? I'm confused.",
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": int(datetime.utcnow().timestamp() * 1000)
             }
         ],
         "metadata": {
@@ -147,7 +147,7 @@ def test_multi_turn_conversation():
             "message": {
                 "sender": "scammer",
                 "text": msg,
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "timestamp": int(datetime.utcnow().timestamp() * 1000)
             },
             "conversationHistory": conversation_history.copy(),
             "metadata": {"channel": "SMS"}
@@ -166,7 +166,7 @@ def test_multi_turn_conversation():
         conversation_history.append({
             "sender": "user",
             "text": response.json()["reply"],
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": int(datetime.utcnow().timestamp() * 1000)
         })
 
         assert response.status_code == 200

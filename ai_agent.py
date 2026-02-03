@@ -37,7 +37,7 @@ class AIHoneypotAgent:
                 "typo_rate": 0.20
             }
         }
-        
+
         # Response strategies based on conversation stage
         self.response_stages = {
             "initial": [
@@ -66,7 +66,7 @@ class AIHoneypotAgent:
                 "Create urgency for scammer to share info"
             ]
         }
-    
+
     async def generate_response(
         self,
         message: str,
@@ -75,43 +75,43 @@ class AIHoneypotAgent:
     ) -> str:
         """
         Generate a realistic response to scammer's message
-        
+
         Args:
             message: Latest message from scammer
             conversation_history: Previous messages in conversation
             scam_type: Type of scam detected
-        
+
         Returns:
             AI-generated response
         """
-        
+
         # Select persona based on scam type
         persona = self._select_persona(scam_type)
-        
+
         # Determine conversation stage
         stage = self._determine_stage(len(conversation_history))
-        
+
         # Build system prompt for Claude API
         system_prompt = self._build_system_prompt(persona, stage, scam_type)
-        
+
         # Build conversation context
         context = self._build_context(conversation_history[-6:])  # Last 3 exchanges
-        
+
         # Since we're in a hackathon demo, let's use rule-based responses
         # In production, you would call Claude API here
         response = self._generate_rule_based_response(
-            message, 
-            persona, 
-            stage, 
+            message,
+            persona,
+            stage,
             scam_type,
             len(conversation_history)
         )
-        
+
         # Add realistic imperfections
         response = self._add_realistic_touches(response, persona)
-        
+
         return response
-    
+
     def _select_persona(self, scam_type: str) -> str:
         """Select appropriate persona based on scam type"""
         persona_mapping = {
@@ -124,7 +124,7 @@ class AIHoneypotAgent:
             "impersonation": "elderly"
         }
         return persona_mapping.get(scam_type, "cautious")
-    
+
     def _determine_stage(self, message_count: int) -> str:
         """Determine conversation stage based on message count"""
         if message_count <= 2:
@@ -137,11 +137,11 @@ class AIHoneypotAgent:
             return "information_gathering"
         else:
             return "extraction"
-    
+
     def _build_system_prompt(self, persona: str, stage: str, scam_type: str) -> str:
         """Build system prompt for Claude API"""
         persona_details = self.personas[persona]
-        
+
         return f"""You are playing the role of a potential scam victim to gather intelligence about scammers.
 
 PERSONA: {persona}
@@ -175,7 +175,7 @@ Generate a realistic response that:
 2. Is appropriate for the conversation stage
 3. Keeps the scammer engaged
 4. Works toward extracting intelligence"""
-    
+
     def _build_context(self, recent_messages: List[Dict]) -> str:
         """Build conversation context"""
         context = "RECENT CONVERSATION:\n"
@@ -183,7 +183,7 @@ Generate a realistic response that:
             role = "Scammer" if msg["role"] == "scammer" else "You"
             context += f"{role}: {msg['content']}\n"
         return context
-    
+
     def _generate_rule_based_response(
         self,
         message: str,
@@ -193,9 +193,9 @@ Generate a realistic response that:
         turn_number: int
     ) -> str:
         """Generate response using rule-based system (for demo purposes)"""
-        
+
         message_lower = message.lower()
-        
+
         # Stage 1: Initial contact - Show interest/confusion
         if stage == "initial":
             responses = {
@@ -221,7 +221,7 @@ Generate a realistic response that:
                 ]
             }
             return random.choice(responses.get(persona, responses["cautious"]))
-        
+
         # Stage 2: Engagement - Ask questions, show growing interest
         elif stage == "engagement":
             if "click" in message_lower or "link" in message_lower:
@@ -249,7 +249,7 @@ Generate a realistic response that:
                     "Alright, I'm interested but I need more information. Can you explain the process?"
                 ]
             return random.choice(responses)
-        
+
         # Stage 3: Trust building - Share fake details, act cooperative
         elif stage == "trust_building":
             responses = [
@@ -260,7 +260,7 @@ Generate a realistic response that:
                 "My daughter helps me with these things usually but she's at work. Should I wait for her? Or can we proceed now?"
             ]
             return random.choice(responses)
-        
+
         # Stage 4: Information gathering - Try to get scammer's details
         elif stage == "information_gathering":
             responses = [
@@ -272,7 +272,7 @@ Generate a realistic response that:
                 "Do you have a WhatsApp number? My son said everything legitimate has a company WhatsApp these days."
             ]
             return random.choice(responses)
-        
+
         # Stage 5: Extraction - Create urgency for scammer to share info
         else:
             responses = [
@@ -284,13 +284,13 @@ Generate a realistic response that:
                 "The link you sent isn't working. Can you share a different one? Or better yet, give me your account details directly?"
             ]
             return random.choice(responses)
-    
+
     def _add_realistic_touches(self, response: str, persona: str) -> str:
         """Add typos, delays, and other realistic touches"""
-        
+
         persona_details = self.personas[persona]
         typo_rate = persona_details["typo_rate"]
-        
+
         # Add occasional typos
         if random.random() < typo_rate:
             words = response.split()
@@ -305,17 +305,17 @@ Generate a realistic response that:
                     word_list[pos], word_list[pos + 1] = word_list[pos + 1], word_list[pos]
                     words[idx] = ''.join(word_list)
             response = ' '.join(words)
-        
+
         # Add ellipsis for thinking
         if random.random() < 0.3:
             response = response.replace('. ', '... ', 1)
-        
+
         return response
-    
+
     def get_persona_info(self, persona: str) -> Dict:
         """Get information about a specific persona"""
         return self.personas.get(persona, {})
-    
+
     def list_personas(self) -> List[str]:
         """List all available personas"""
         return list(self.personas.keys())
@@ -324,43 +324,43 @@ Generate a realistic response that:
 # Test the agent
 if __name__ == "__main__":
     import asyncio
-    
+
     agent = AIHoneypotAgent()
-    
+
     async def test_agent():
         print("🤖 Testing AI Honeypot Agent\n")
-        
+
         test_scenario = {
             "message": "URGENT! Your bank account will be closed in 24 hours. Click here to verify: http://bit.ly/bank123",
             "scam_type": "phishing"
         }
-        
+
         conversation_history = []
-        
+
         for i in range(5):
             response = await agent.generate_response(
                 message=test_scenario["message"],
                 conversation_history=conversation_history,
                 scam_type=test_scenario["scam_type"]
             )
-            
+
             print(f"Turn {i+1}:")
             print(f"Scammer: {test_scenario['message'][:80]}...")
             print(f"AI Agent: {response}")
             print("-" * 80)
-            
+
             conversation_history.append({
                 "role": "scammer",
                 "content": test_scenario["message"],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": int(datetime.utcnow().timestamp() * 1000)
             })
             conversation_history.append({
                 "role": "ai_agent",
                 "content": response,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": int(datetime.utcnow().timestamp() * 1000)
             })
-            
+
             # Simulate different scammer messages for next turn
             test_scenario["message"] = f"Please provide your account number now. This is urgent! Turn {i+2}"
-    
+
     asyncio.run(test_agent())
