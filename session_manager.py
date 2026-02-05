@@ -253,7 +253,9 @@ class SessionManager:
         # Phase 2: Final
         # Send if stable OR high confidence, and haven't sent final yet
         if session.callback_phase == "preliminary":
-            if is_stable or total_confidence >= 2.5:
+            if is_stable and total_confidence >= 2.5:
+                # Requirement: Fire ONLY when ALL are true (Min Intel + Stability + Confidence)
+                # We checked Min Intel at start. Now strictly enforcing Stability AND Confidence.
                 return {"send": True, "type": "final"}
 
         # Phase 3: Delta

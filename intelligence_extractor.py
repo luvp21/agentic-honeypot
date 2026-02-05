@@ -68,7 +68,7 @@ class IntelligenceExtractor:
 
         # 2.1 Bank Accounts (Context Required)
         # Regex: (?i)(account\s*(number|no|#)|a\/c|acc\.?)\s*[:\-]?\s*([0-9]{9,18})
-        bank_context_pattern = r'(?i)(?:account\s*(?:number|no|#)|a\/c|acc\.?)\s*[:\-]?\s*([0-9]{9,18})'
+        bank_context_pattern = r'(?i)(?:account\s*(?:number|no\.?|#)|a\/c|acc\.?)\s*[:\-]?\s*([0-9]{9,18})'
         for match in re.finditer(bank_context_pattern, text):
             value = match.group(1)
             # Validate: Not a phone number (10 digits starting with 6-9)
