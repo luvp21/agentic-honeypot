@@ -272,8 +272,10 @@ async def process_message(
         # ====================================================================
         # STEP 5: Callback Trigger Check
         # ====================================================================
+        # Changed to 20 messages to capture ALL intelligence from entire conversation
+        # This ensures UPIs, phishing links, and other data mentioned later are included
 
-        if session_manager.should_send_callback(session_id, min_messages=5):
+        if session_manager.should_send_callback(session_id, min_messages=20):
             logger.info(f"Callback conditions met for {session_id}")
 
             # Send callback
