@@ -99,6 +99,7 @@ class IntelligenceExtractor:
             r'phone\s*(?:number)?\s*(?:is|:)?\s*([\+\d][\d\s\-\(\)]{8,})',
             r'(?:call|contact)\s+(?:us|me)?\s*(?:at|on)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
             r'mobile\s*(?:number)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
+            r'registered\s*(?:number)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
         ]
         for pattern in phone_patterns:
             matches = re.findall(pattern, message, re.IGNORECASE)
