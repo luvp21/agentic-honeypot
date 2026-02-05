@@ -253,9 +253,9 @@ class SessionManager:
         # Phase 2: Final
         # Send if stable OR high confidence, and haven't sent final yet
         if session.callback_phase == "preliminary":
-            if is_stable and total_confidence >= 2.5:
-                # Requirement: Fire ONLY when ALL are true (Min Intel + Stability + Confidence)
-                # We checked Min Intel at start. Now strictly enforcing Stability AND Confidence.
+            # Requirement: Fire if STABLE + CONFIDENT, OR if OVERWHELMINGLY CONFIDENT (Saturation Escape Hatch)
+            # This ensures we don't wait for silence if we already have perfect intelligence (e.g. Bank + UPI saturated = 4.0)
+            if (is_stable and total_confidence >= 2.5) or (total_confidence >= 4.0):
                 return {"send": True, "type": "final"}
 
         # Phase 3: Delta
