@@ -1,8 +1,44 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual Environments
 venv/
+env/
+ENV/
+.venv
+
+# Environment Variables
 .env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
 server.log
 tunnel.log
-*.log
+
+# Deployment (old)
+render.yaml
+
+# Project specific
+README_PROJECT.md
