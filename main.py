@@ -295,16 +295,20 @@ async def process_message(
             callback_type = callback_status["type"]
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
-            # Send callback
-            callback_success = send_callback_with_retry(
-                session_id=session_id,
-                scam_detected=session.is_scam,
-                total_messages=total_messages,
-                extracted_intelligence=session.extracted_intelligence, # Legacy flat dict
-                scam_type=session.scam_type,
-                max_retries=3,
-                status=callback_type
-            )
+            # Send callback ONLY if final
+            if callback_type == "final":
+                callback_success = send_callback_with_retry(
+                    session_id=session_id,
+                    scam_detected=session.is_scam,
+                    total_messages=total_messages,
+                    extracted_intelligence=session.extracted_intelligence, # Legacy flat dict
+                    scam_type=session.scam_type,
+                    max_retries=3,
+                    status=callback_type
+                )
+            else:
+                logger.info(f"Processing internal phase transition: {callback_type}")
+                callback_success = True
 
             if callback_success:
                 session_manager.mark_callback_sent(session_id, callback_type)

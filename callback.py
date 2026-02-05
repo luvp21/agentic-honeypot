@@ -201,7 +201,14 @@ def send_callback_with_retry(
     Returns:
         True if successful, False after all retries failed
     """
+
     for attempt in range(max_retries):
+
+        # Defensive Switch: Only allow 'final' status to hit the external API
+        if status != "final":
+             logger.info(f"Skipping external callback for status: {status} (Internal Phase Only)")
+             return True
+
         success = send_final_callback(
             session_id=session_id,
             scam_detected=scam_detected,
