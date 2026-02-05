@@ -186,47 +186,46 @@ async def process_message(
         # STEP 3: Intelligence Extraction
         # ====================================================================
 
-        extracted = intel_extractor.extract(current_message.text)
+        # ====================================================================
+        # STEP 3: Intelligence Extraction
+        # ====================================================================
 
-        if extracted:
-            # Merge with existing intelligence
-            current_intel = session.extracted_intelligence
+        # Build context window from last 5 messages
+        context_msgs = conversation_history[-5:] if conversation_history else []
+        context_text = " ".join([m.text for m in context_msgs])
 
-            for key, value in extracted.items():
-                if key.startswith("_"):  # Skip metadata
-                    continue
+        # Message index is total messages - 1 (0-indexed)
+        msg_index = total_messages - 1
 
-                if key not in current_intel:
-                    current_intel[key] = []
+        extracted_list = intel_extractor.extract(
+            text=current_message.text,
+            message_index=msg_index,
+            context_window=context_text
+        )
 
-                if isinstance(value, list):
-                    current_intel[key].extend(value)
-                else:
-                    current_intel[key].append(value)
+        if extracted_list:
+            # Update session graph
+            session_manager.update_intel_graph(session_id, extracted_list)
 
-            # Deduplicate
-            for key in current_intel:
-                if isinstance(current_intel[key], list):
-                    current_intel[key] = list(set(current_intel[key]))
+            # Log what was found
+            found_types = list(set([x.type for x in extracted_list]))
+            logger.info(f"Intelligence extracted for {session_id}: {found_types}")
 
-            session_manager.update_session(
-                session_id,
-                extracted_intelligence=current_intel
-            )
-
-            logger.info(f"Intelligence extracted for {session_id}: {list(extracted.keys())}")
-
-        # Add suspicious keywords from scam detector
+        # Add suspicious keywords from scam detector (Legacy support for keyword tracking)
         if scam_result.get("indicators"):
-            if "suspicious_keywords" not in session.extracted_intelligence:
-                session.extracted_intelligence["suspicious_keywords"] = []
-
-            session.extracted_intelligence["suspicious_keywords"].extend(
-                scam_result["indicators"][:5]  # Top 5 indicators
-            )
-            session.extracted_intelligence["suspicious_keywords"] = list(
-                set(session.extracted_intelligence["suspicious_keywords"])
-            )
+            # We can create RawIntel for these too if we want, or just stick to Graph
+            # For strict compliance, let's add them as 'suspicious_keywords' type to graph
+            from intelligence_extractor import RawIntel
+            keyword_intel = []
+            for kw in scam_result["indicators"][:5]:
+                keyword_intel.append(RawIntel(
+                    type="suspicious_keywords",
+                    value=kw,
+                    source="scam_detector",
+                    confidence_delta=0.5,
+                    message_index=msg_index
+                ))
+            session_manager.update_intel_graph(session_id, keyword_intel)
 
         # ====================================================================
         # STEP 4: Agent Response Generation
@@ -235,6 +234,22 @@ async def process_message(
         # FIXED: Use AI agent if session is marked as scam (persistent state)
         if session.is_scam:
             # Agent activated - generate contextual response
+
+            # specific check for missing intelligence to guide the agent
+            missing_intel = []
+            features = session.extracted_intelligence # Use legacy dict for easy check
+
+            if not features.get("bank_accounts"):
+                missing_intel.append("bank_accounts")
+            elif not features.get("ifsc_codes"): # Only need IFSC if we have account
+                 missing_intel.append("ifsc_codes")
+
+            if not features.get("upi_ids"):
+                missing_intel.append("upi_ids")
+
+            if not features.get("phone_numbers"):
+                # Lower priority but good to have
+                pass
 
             # Convert conversationHistory to agent format
             agent_history = []
@@ -256,12 +271,13 @@ async def process_message(
             agent_response = await ai_agent.generate_response(
                 message=current_message.text,
                 conversation_history=agent_history,
-                scam_type=session.scam_type
+                scam_type=session.scam_type,
+                missing_intel=missing_intel
             )
 
             logger.info(
                 f"🤖 Agent response generated for {session_id} "
-                f"(message {total_messages}, scam type: {session.scam_type})"
+                f"(message {total_messages}, scam type: {session.scam_type}, missing: {missing_intel})"
             )
 
         else:
@@ -270,30 +286,31 @@ async def process_message(
             logger.info(f"Neutral response for {session_id} (no scam detected)")
 
         # ====================================================================
-        # STEP 5: Callback Trigger Check (Intelligent)
+        # STEP 5: Callback Trigger Check (Intelligent Stability-Based)
         # ====================================================================
-        # INTELLIGENT TRIGGER: Sends based on intelligence extracted, not message count
-        # Will send when: min 5 msgs + has critical data (UPIs/accounts/links)
 
-        if session_manager.should_send_callback(session_id, min_messages=5):
-            logger.info(f"🎯 Callback conditions met for {session_id} (sufficient intelligence extracted)")
+        callback_status = session_manager.should_send_callback(session_id, msg_index)
+
+        if callback_status["send"]:
+            callback_type = callback_status["type"]
+            logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
             # Send callback
             callback_success = send_callback_with_retry(
                 session_id=session_id,
                 scam_detected=session.is_scam,
                 total_messages=total_messages,
-                extracted_intelligence=session.extracted_intelligence,
+                extracted_intelligence=session.extracted_intelligence, # Legacy flat dict
                 scam_type=session.scam_type,
-                max_retries=3
+                max_retries=3,
+                status=callback_type
             )
 
             if callback_success:
-                session_manager.mark_callback_sent(session_id)
-                logger.info(f"✅ Callback sent and marked for {session_id}")
+                session_manager.mark_callback_sent(session_id, callback_type)
+                logger.info(f"✅ {callback_type.capitalize()} callback sent for {session_id}")
             else:
                 logger.error(f"❌ Callback failed for {session_id}")
-
         # ====================================================================
         # STEP 6: Return Official Response Format
         # ====================================================================

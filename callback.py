@@ -94,7 +94,8 @@ def send_final_callback(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
-    conversation_history: List = None
+    conversation_history: List = None,
+    status: str = "final"
 ) -> bool:
     """
     Send final results to GUVI evaluation platform.
@@ -109,6 +110,7 @@ def send_final_callback(
         extracted_intelligence: Intelligence dict (snake_case)
         scam_type: Type of scam
         conversation_history: Optional conversation data
+        status: Callback status (preliminary/final/delta)
 
     Returns:
         True if callback successful, False otherwise
@@ -131,17 +133,21 @@ def send_final_callback(
             conversation_history=conversation_history
         )
 
+        # Append status to notes for visibility
+        agent_notes = f"[{status.upper()} CALLBACK] {agent_notes}"
+
         # Create payload
         payload = FinalCallbackPayload(
             sessionId=session_id,
             scamDetected=scam_detected,
             totalMessagesExchanged=total_messages,
             extractedIntelligence=intelligence,
-            agentNotes=agent_notes
+            agentNotes=agent_notes,
+            status=status
         )
 
         # Log payload for debugging
-        logger.info(f"Sending callback for session {session_id}")
+        logger.info(f"Sending {status} callback for session {session_id}")
         logger.debug(f"Payload: {payload.model_dump_json(indent=2)}")
 
         # Send POST request
@@ -177,7 +183,8 @@ def send_callback_with_retry(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
-    max_retries: int = 3
+    max_retries: int = 3,
+    status: str = "final"
 ) -> bool:
     """
     Send callback with retry logic.
@@ -189,6 +196,7 @@ def send_callback_with_retry(
         extracted_intelligence: Intelligence data
         scam_type: Scam type
         max_retries: Maximum retry attempts
+        status: Callback status
 
     Returns:
         True if successful, False after all retries failed
@@ -199,7 +207,8 @@ def send_callback_with_retry(
             scam_detected=scam_detected,
             total_messages=total_messages,
             extracted_intelligence=extracted_intelligence,
-            scam_type=scam_type
+            scam_type=scam_type,
+            status=status
         )
 
         if success:

@@ -71,7 +71,8 @@ class AIHoneypotAgent:
         self,
         message: str,
         conversation_history: List[Dict],
-        scam_type: str
+        scam_type: str,
+        missing_intel: List[str] = None
     ) -> str:
         """
         Generate a realistic response to scammer's message
@@ -80,6 +81,7 @@ class AIHoneypotAgent:
             message: Latest message from scammer
             conversation_history: Previous messages in conversation
             scam_type: Type of scam detected
+            missing_intel: List of intelligence types we still need (e.g. ['bank_accounts', 'upi_ids'])
 
         Returns:
             AI-generated response
@@ -92,7 +94,7 @@ class AIHoneypotAgent:
         stage = self._determine_stage(len(conversation_history))
 
         # Build system prompt for Claude API
-        system_prompt = self._build_system_prompt(persona, stage, scam_type)
+        system_prompt = self._build_system_prompt(persona, stage, scam_type, missing_intel)
 
         # Build conversation context
         context = self._build_context(conversation_history[-6:])  # Last 3 exchanges
@@ -104,7 +106,8 @@ class AIHoneypotAgent:
             persona,
             stage,
             scam_type,
-            len(conversation_history)
+            len(conversation_history),
+            missing_intel
         )
 
         # Add realistic imperfections
@@ -138,9 +141,15 @@ class AIHoneypotAgent:
         else:
             return "extraction"
 
-    def _build_system_prompt(self, persona: str, stage: str, scam_type: str) -> str:
+    def _build_system_prompt(self, persona: str, stage: str, scam_type: str, missing_intel: List[str] = None) -> str:
         """Build system prompt for Claude API"""
         persona_details = self.personas[persona]
+
+        # specific instructions for missing intel
+        intel_instructions = ""
+        if missing_intel:
+            readable_missing = ", ".join([f.replace("_", " ") for f in missing_intel])
+            intel_instructions = f"\n\nCRITICAL OBJECTIVE: The scammer has NOT yet revealed their {readable_missing}. You MUST steer the conversation to ask for these details. Invent a plausible reason (e.g., 'My bank needs the IFSC code', 'Google Pay asks for UPI ID')."
 
         return f"""You are playing the role of a potential scam victim to gather intelligence about scammers.
 
@@ -161,6 +170,7 @@ OBJECTIVES:
    - Phishing links
    - Contact information
    - Payment details
+{intel_instructions}
 
 GUIDELINES:
 - Never reveal you're an AI or honeypot
@@ -190,7 +200,8 @@ Generate a realistic response that:
         persona: str,
         stage: str,
         scam_type: str,
-        turn_number: int
+        turn_number: int,
+        missing_intel: List[str] = None
     ) -> str:
         """Generate response using rule-based system (for demo purposes)"""
 

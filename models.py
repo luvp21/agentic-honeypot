@@ -4,7 +4,7 @@ STRICTLY MATCHES OFFICIAL HACKATHON SPECIFICATION
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 
@@ -93,11 +93,24 @@ class FinalCallbackPayload(BaseModel):
     totalMessagesExchanged: int = Field(..., description="Total message count in session")
     extractedIntelligence: ExtractedIntelligence = Field(..., description="All extracted intelligence")
     agentNotes: str = Field(..., description="Summary of scammer behavior and tactics")
+    status: Optional[str] = Field("final", description="Callback status: preliminary or final")
 
 
 # ============================================================================
 # INTERNAL STATE MODELS (Not exposed in API)
 # ============================================================================
+
+class IntelItem(BaseModel):
+    """
+    Individual piece of extracted intelligence with tracking.
+    """
+    value: str
+    type: str
+    confidence: float
+    first_seen_msg: int
+    last_seen_msg: int
+    sources: List[str] = Field(default_factory=list)
+
 
 class SessionState(BaseModel):
     """
@@ -109,7 +122,12 @@ class SessionState(BaseModel):
     scam_type: str = "unknown"
     confidence_score: float = 0.0
     message_count: int = 0
+    # New: Structured Intelligence Graph given per type
+    intel_graph: Dict[str, List[IntelItem]] = Field(default_factory=dict)
+    # Keeping this for backward compatibility during migration, logic will be in SessionManager
     extracted_intelligence: dict = Field(default_factory=dict)
     callback_sent: bool = False
+    # Track which callback phases have been sent
+    callback_phase: str = "none"  # none, preliminary, final
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_updated: datetime = Field(default_factory=datetime.utcnow)

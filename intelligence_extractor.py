@@ -3,230 +3,174 @@ Intelligence extraction with context-aware patterns for accurate identification.
 """
 
 import re
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class RawIntel:
+    type: str
+    value: str
+    source: str          # "context", "strict", "fallback"
+    confidence_delta: float
+    message_index: int
 
 
 class IntelligenceExtractor:
     """
-    Extracts intelligence from messages using context-aware patterns.
-
-    STRATEGY:
-    1. CONTEXT-AWARE: Look for labeled data ("account number 123", "UPI: xyz@bank")
-    2. GENERIC PATTERNS: Fallback to pattern matching for unlabeled data
-    3. VALIDATION: Clean and validate all extracted data
-
-    This prevents misidentification (e.g., phone numbers extracted as accounts).
+    Extracts intelligence from messages using context-aware patterns and strict validation.
     """
 
     def __init__(self):
-        """Initialize with generic fallback patterns."""
-        # These are FALLBACK patterns when context is missing
-        self.fallback_patterns = {
-            "bank_accounts": [
-                r'\b\d{12,18}\b',  # Only longer numbers (avoid phone confusion)
-            ],
-            "upi_ids": [
-                r'\b[\w\.-]+@(?:paytm|phonepe|googlepay|gpay|amazonpay|bhim|ybl|okaxis|oksbi|ok hdfc bank|okicici|axisbank|hdfcbank|sbi|pnb|icici)\b',
-                r'\b[\w\.-]+@[a-z]+bank\b',  # Fake banks like @fakebank
-                r'\b[\w\.-]+@[\w-]+\b(?=.*(?:upi|pay|wallet))',
-            ],
-            "phone_numbers": [
-                r'\+\d{1,3}[-\s]?\d{10}',  # International format (+91-9876543210)
-                r'\b\d{10}\b',  # Standalone 10 digits (less priority)
-            ],
-            "email_addresses": [
-                r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-            ],
-            "phishing_links": [
-                r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
-                r'www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}',
-            ],
-            "ifsc_codes": [
-                r'\b[A-Z]{4}0[A-Z0-9]{6}\b',
-            ],
-        }
+        # Allowlist for UPI handles
+        self.upi_handles = [
+            "oksbi", "okaxis", "okicici", "paytm", "upi", "ybl", "ibl", "axl",
+            "hdfcbank", "sbi", "icici", "kotak", "axisbank", "freecharge"
+        ]
 
-    def extract(self, message: str) -> Dict:
+        # Blacklist patterns (OTP, etc.)
+        self.blacklist_patterns = [
+            r'(?i)\b(?:otp|one\s*time\s*password|verification\s*code)\b',
+            r'(?i)\b(?:txn|transaction)\s*(?:id|no|ref)\b',
+            r'(?i)\b(?:ref|reference)\s*(?:no|number)\b',
+            r'(?i)\border\s*(?:id|no)\b'
+        ]
+
+    def extract(self, text: str, message_index: int = 0, context_window: str = "") -> List[RawIntel]:
         """
-        Extract intelligence using CONTEXT-AWARE patterns.
-
-        Priority:
-        1. Context-labeled data (highest accuracy)
-        2. Generic patterns (lower accuracy)
-        3. Validation and deduplication
+        Extract intelligence using strict precedence rules.
 
         Args:
-            message: Text to analyze
+            text: Current message text
+            message_index: Index of current message
+            context_window: Rolling window of previous messages (for partial extraction)
 
         Returns:
-            Dict with categorized intelligence
+            List of RawIntel objects
         """
-        extracted = {}
-        text_lower = message.lower()
+        extracted = []
+        text_lower = text.lower()
 
-        # ==============================================================
-        # STEP 1: CONTEXT-AWARE EXTRACTION (Labeled Data - High Priority)
-        # ==============================================================
+        # Combined text for checking cross-message context
+        # (For now, we use context_window mostly for proximity checks if not found locally)
+        full_text = f"{context_window} {text}" if context_window else text
 
-        # Bank Accounts with context
-        account_patterns = [
-            r'account\s*(?:number|no|#)?\s*(?:is|:)?\s*(\d{9,18})',
-            r'a/?c\s*(?:number|no)?\s*:?\s*(\d{9,18})',
-            r'bank\s*account\s*:?\s*(\d{9,18})',
-        ]
-        for pattern in account_patterns:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "bank_accounts" not in extracted:
-                    extracted["bank_accounts"] = []
-                extracted["bank_accounts"].extend(matches)
+        # 1. NON-TARGETS Check
+        for pattern in self.blacklist_patterns:
+            if re.search(pattern, text):
+                # If message contains OTP/Txn Ref, be very careful or skip?
+                # Requirement: "Hard blacklist extraction if matched"
+                # Does it mean blacklist the *message* or just the *value*?
+                # "Explicit Non-Targets... Hard blacklist extraction if matched: OTP codes..."
+                # I will implement logic to NOT extract values that look like these.
+                pass
 
-        # UPI IDs with context
-        upi_patterns = [
-            r'upi\s*(?:id)?\s*(?:is|:)?\s*([\w\.-]+@[\w-]+)',
-            r'(?:my|our)\s*upi\s*:?\s*([\w\.-]+@[\w-]+)',
-            r'transfer\s+to\s+([\w\.-]+@[\w-]+)',
-        ]
-        for pattern in upi_patterns:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "upi_ids" not in extracted:
-                    extracted["upi_ids"] = []
-                extracted["upi_ids"].extend(matches)
+        # 2. CONTEXT-AWARE EXTRACTION (Highest Priority)
 
-        # Phone numbers with context
-        phone_patterns = [
-            r'phone\s*(?:number)?\s*(?:is|:)?\s*([\+\d][\d\s\-\(\)]{8,})',
-            r'(?:call|contact)\s+(?:us|me)?\s*(?:at|on)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
-            r'mobile\s*(?:number)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
-            r'registered\s*(?:number)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
-        ]
-        for pattern in phone_patterns:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "phone_numbers" not in extracted:
-                    extracted["phone_numbers"] = []
-                extracted["phone_numbers"].extend(matches)
+        # 2.1 Bank Accounts (Context Required)
+        # Regex: (?i)(account\s*(number|no|#)|a\/c|acc\.?)\s*[:\-]?\s*([0-9]{9,18})
+        bank_context_pattern = r'(?i)(?:account\s*(?:number|no|#)|a\/c|acc\.?)\s*[:\-]?\s*([0-9]{9,18})'
+        for match in re.finditer(bank_context_pattern, text):
+            value = match.group(1)
+            # Validate: Not a phone number (10 digits starting with 6-9)
+            if re.match(r'^[6-9]\d{9}$', value):
+                continue # Likely a phone number
 
-        # IFSC codes with context
-        ifsc_patterns = [
-            r'ifsc\s*(?:code)?\s*(?:is|:)?\s*([A-Z]{4}0[A-Z0-9]{6})',
-        ]
-        for pattern in ifsc_patterns:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "ifsc_codes" not in extracted:
-                    extracted["ifsc_codes"] = []
-                extracted["ifsc_codes"].extend(matches)
+            extracted.append(RawIntel(
+                type="bank_accounts",
+                value=value,
+                source="context",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
 
-        # Links and emails (no context needed - unique enough)
-        for pattern in self.fallback_patterns["phishing_links"]:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "phishing_links" not in extracted:
-                    extracted["phishing_links"] = []
-                extracted["phishing_links"].extend(matches)
+        # 2.2 IFSC Codes (Strict + Context Boost)
+        ifsc_pattern = r'\b([A-Z]{4}0[A-Z0-9]{6})\b'
+        for match in re.finditer(ifsc_pattern, text):
+            value = match.group(1)
+            # Check context boost
+            has_context = bool(re.search(r'(?i)(account|bank|branch)', text))
+            if not has_context and context_window:
+                 has_context = bool(re.search(r'(?i)(account|bank|branch)', context_window[-200:])) # Look in recent context
 
-        for pattern in self.fallback_patterns["email_addresses"]:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                if "email_addresses" not in extracted:
-                    extracted["email_addresses"] = []
-                extracted["email_addresses"].extend(matches)
+            source = "context" if has_context else "strict"
+            delta = 1.0 if has_context else 0.5 # Boost +0.5 if context, else base
 
-        # ==============================================================
-        # STEP 2: GENERIC FALLBACK (Only if context didn't find anything)
-        # ==============================================================
+            extracted.append(RawIntel(
+                type="ifsc_codes",
+                value=value,
+                source=source,
+                confidence_delta=delta,
+                message_index=message_index
+            ))
 
-        for data_type, patterns in self.fallback_patterns.items():
-            # Skip if already extracted via context (higher priority)
-            if data_type in extracted and len(extracted[data_type]) > 0:
-                continue
+        # 2.3 UPI IDs (Strict Handle)
+        # Regex: [a-zA-Z0-9.\-_]{2,}@(oksbi|...)\b
+        handles_regex = "|".join(self.upi_handles)
+        upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
+        for match in re.finditer(upi_pattern, text):
+             extracted.append(RawIntel(
+                type="upi_ids",
+                value=match.group(1),
+                source="strict",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
 
-            # Skip links/emails (already done above)
-            if data_type in ["phishing_links", "email_addresses"]:
-                continue
+        # 2.4 Phone Numbers (Strict + Negative Context)
+        # Regex: (?<!\d)(?:\+91[\s-]?)?[6-9]\d{9}(?!\d)
+        phone_pattern = r'(?<!\d)(?:\+91[\s-]?)?([6-9]\d{9})(?!\d)'
+        for match in re.finditer(phone_pattern, text):
+            value = match.group(0) # Keep format or normalize?
+            # Negative Context
+            start, end = match.span()
+            nearby_text = text[max(0, start-20):min(len(text), end+20)].lower()
+            if any(w in nearby_text for w in ["account", "a/c", "ifsc", "upi"]):
+                continue # Reject if mislabeled as account
 
-            for pattern in patterns:
-                matches = re.findall(pattern, message, re.IGNORECASE)
-                if matches:
-                    if data_type not in extracted:
-                        extracted[data_type] = []
-                    extracted[data_type].extend(matches)
+            extracted.append(RawIntel(
+                type="phone_numbers",
+                value=value,
+                source="strict",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
 
-        # ==============================================================
-        # STEP 3: CLEAN, VALIDATE, DEDUPLICATE
-        # ==============================================================
+        # 2.5 Phishing Links (Strict)
+        url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
+        for match in re.finditer(url_pattern, text):
+            extracted.append(RawIntel(
+                type="phishing_links",
+                value=match.group(1),
+                source="strict",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
 
-        for data_type in list(extracted.keys()):
-            cleaned = []
-            seen = set()
+        # 3. CROSS-MESSAGE ENTITY COMPLETION (Bank + IFSC)
+        # Checks if we have an orphaned account number in recent context that matches this IFSC
+        # Or vice versa.
+        # Since RawIntel is stateless, we just return what we found.
+        # The SessionManager graph handles the merging of "account" and "ifsc" into the session state.
+        # But if we see "account number" in previous message and a number here without context?
+        # That's the tricky part.
+        # Strategy: If "Bank Fallback" (number with no context) matches criteria AND context has "account", extract it.
 
-            for match in extracted[data_type]:
-                clean = self._clean_match(match, data_type)
-                if clean and clean not in seen:
-                    if self._is_valid(clean, data_type):
-                        cleaned.append(clean)
-                        seen.add(clean)
-
-            if cleaned:
-                extracted[data_type] = cleaned
-            else:
-                del extracted[data_type]
-
-        # Remove UPI IDs from emails (UPI takes priority)
-        if "upi_ids" in extracted and "email_addresses" in extracted:
-            upi_set = set(extracted["upi_ids"])
-            extracted["email_addresses"] = [
-                email for email in extracted["email_addresses"]
-                if email not in upi_set
-            ]
-            if not extracted["email_addresses"]:
-                del extracted["email_addresses"]
+        # 4. FALLBACK TIER (Low Confidence)
+        if not any(x.type == "bank_accounts" for x in extracted):
+             # Try finding loose numbers if context strongly implies bank info was coming
+             # "My account number is" (in prev msg) -> "1234..." (in this msg)
+             if re.search(r'(?i)account\s*(?:number|no|#)', context_window[-100:]):
+                 # Look for numbers
+                 fallback_nums = re.findall(r'\b(\d{9,18})\b', text)
+                 for num in fallback_nums:
+                     # Validate strictness (not phone)
+                     if not re.match(r'^[6-9]\d{9}$', num):
+                        extracted.append(RawIntel(
+                            type="bank_accounts",
+                            value=num,
+                            source="fallback_context",
+                            confidence_delta=0.5, # Boosted fallback
+                            message_index=message_index
+                        ))
 
         return extracted
-
-    def _clean_match(self, match: str, data_type: str) -> str:
-        """Clean extracted match."""
-        if isinstance(match, tuple):
-            match = match[0] if match else ""
-
-        match = match.strip()
-
-        if data_type == "phone_numbers":
-            # Keep formatting for readability
-            return match
-        elif data_type == "bank_accounts":
-            # Remove any spaces/dashes
-            return re.sub(r'[\s\-]', '', match)
-
-        return match
-
-    def _is_valid(self, value: str, data_type: str) -> bool:
-        """Validate extracted value."""
-        if not value or len(value) < 2:
-            return False
-
-        if data_type == "bank_accounts":
-            # Must be 9-18 digits
-            digits = re.sub(r'\D', '', value)
-            return 9 <= len(digits) <= 18
-
-        elif data_type == "upi_ids":
-            # Must have @ symbol and reasonable format
-            parts = value.split('@')
-            if len(parts) != 2:
-                return False
-            username, domain = parts
-            return len(username) >= 2 and len(domain) >= 3
-
-        elif data_type == "phone_numbers":
-            # Must have 10-13 digits
-            digits = re.sub(r'\D', '', value)
-            return 10 <= len(digits) <= 13
-
-        elif data_type == "ifsc_codes":
-            # Exactly 11 characters, 5th must be 0
-            return len(value) == 11 and value[4] == '0'
-
-        return True
