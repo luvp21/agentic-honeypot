@@ -250,38 +250,43 @@ Generate a realistic response that:
                 ]
             return random.choice(responses)
 
-        # Stage 3: Trust building - Share fake details, act cooperative
+        # Stage 3: Trust building - Share fake details, act cooperative, START asking for their info
         elif stage == "trust_building":
             responses = [
-                "OK I think I'm understanding now. My name is Robert Johnson and I'm 68 years old. I live in Florida. What information do you need from me?",
-                "I'm willing to help but I'm on a fixed income. I can't afford to lose any money. You're sure this is safe?",
-                "Alright, I trust you. My email is robertj1956@email.com if you need to send me anything. What's next?",
-                "I want to do this right. Can you send me an official letter or email? I like to keep records of these things.",
-                "My daughter helps me with these things usually but she's at work. Should I wait for her? Or can we proceed now?"
+                "OK I think I'm understanding now. My name is Robert Johnson and I'm 68 years old. What's your name and employee ID for my records?",
+                "Alright, I trust you. My email is robertj1956@email.com if you need to send me anything. What's your official company email?",
+                "I'm ready to help. But first, can you give me your UPI ID? I want to send a small test payment to verify this is real.",
+                "My bank requires recipient verification. What's your full bank account number and IFSC code?",
+                "I need to document this. What's your company registration number and official contact number?",
+                "Before proceeding, share your payment link or UPI so I can verify with my bank that it's legitimate."
             ]
             return random.choice(responses)
 
-        # Stage 4: Information gathering - Try to get scammer's details
+        # Stage 4: Information gathering - AGGRESSIVELY try to get scammer's details
         elif stage == "information_gathering":
             responses = [
-                "Before I send my information, can I have your full name and company details? I want to keep this documented.",
-                "My bank requires verification. What's your employee ID number and company phone number?",
-                "I need to transfer money but I need your account details first. What bank do you use?",
-                "Can you give me your UPI ID so I can send a small test payment first? I want to make sure it works.",
-                "What's your official email address? I want to verify this with your company before proceeding.",
-                "Do you have a WhatsApp number? My son said everything legitimate has a company WhatsApp these days."
+                "My bank is asking for recipient details. Can you provide your bank account number and IFSC code?",
+                "The payment form needs a beneficiary UPI ID. Can you share yours? I'll send the payment right away.",
+                "I'm ready to proceed but need your UPI ID to complete the payment. What is it?",
+                "Can you send me your payment link or UPI? My bank requires recipient verification first.",
+                "What's your registered phone number and email? I need to save your contact for future reference.",
+                "Share your account details so I can initiate the transfer. I have my bank app open now.",
+                "I need your company's official UPI or bank account to process this payment. Can you provide that?"
             ]
             return random.choice(responses)
 
-        # Stage 5: Extraction - Create urgency for scammer to share info
+        # Stage 5: Extraction - MAXIMUM AGGRESSION for scammer info
         else:
             responses = [
-                "I'm ready to proceed but my bank is asking for recipient details. Can you provide your bank account number and IFSC code?",
+                "I'm ready to proceed but my bank is asking for recipient details... Can you provide your bank account number and IFSC code?",
                 "The payment form is asking for beneficiary UPI ID. What should I enter there? Can you share yours?",
                 "I'm at the payment screen but it's asking me to verify the recipient. What's your registered mobile number with the bank?",
                 "My grandson is helping me now. He says he needs to verify your identity first. What's your company registration number?",
                 "I want to send the fee but Google Pay is asking for your UPI. Can you share that? Mine is senior.citizen@paytm if you need it.",
-                "The link you sent isn't working. Can you share a different one? Or better yet, give me your account details directly?"
+                "The link you sent isn't working... Can you share a different one? Or better yet, give me your account details directly?",
+                "I need your UPI ID or bank account immediately to complete this. The app is timing out!",
+                "My bank app needs: your UPI ID, phone number, and account number. Can you provide all three?",
+                "Just send me your payment details - account number, IFSC, UPI, whatever you accept. I'm ready to pay now!"
             ]
             return random.choice(responses)
 

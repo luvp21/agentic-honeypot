@@ -20,7 +20,10 @@ class IntelligenceExtractor:
                 r'A/C\s*:?\s*(\d{9,18})',
             ],
             "upi_ids": [
-                r'\b[\w\.-]+@(?:paytm|phonepe|googlepay|amazonpay|bhim|ybl|okaxis|oksbi|okhdfcbank|okicici)\b',
+                # Catch ALL UPI-format strings (username@provider)
+                r'\b[\w\.-]+@(?:paytm|phonepe|googlepay|gpay|amazonpay|bhim|ybl|okaxis|oksbi|okhdfcbank|okicici|axisbank|hdfcbank|sbi|pnb|icici)\b',
+                r'\b[\w\.-]+@[a-z]+bank\b',  # Catch fake banks like @fakebank
+                r'\b[\w\.-]+@[\w-]+\b(?=.*(?:upi|pay|wallet))',  # UPI-context based
             ],
             "phone_numbers": [
                 r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
@@ -31,7 +34,7 @@ class IntelligenceExtractor:
                 r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
             ],
             "phishing_links": [
-                r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+                r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.\&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
                 r'www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}',
             ],
             "ifsc_codes": [
@@ -102,12 +105,18 @@ class IntelligenceExtractor:
             parts = value.split('@')
             if len(parts) != 2:
                 return False
-            valid_handles = [
-                'paytm', 'phonepe', 'googlepay', 'gpay', 'amazonpay',
-                'bhim', 'ybl', 'okaxis', 'oksbi', 'okhdfcbank', 'okicici',
-                'axisbank', 'hdfcbank', 'icici', 'sbi', 'pnb'
-            ]
-            return any(handle in parts[1].lower() for handle in valid_handles)
+
+            # Accept both real AND fake UPI IDs (scammers use fake ones)
+            # Check if it looks like a UPI ID (reasonable format)
+            username, domain = parts
+            if len(username) < 2 or len(domain) < 3:
+                return False
+
+            # Exclude email addresses (must have proper TLD)
+            if '.' in domain and len(domain.split('.')[-1]) > 3:
+                return False  # Looks more like email
+
+            return True  # Accept all UPI-format strings
 
         elif data_type == "phone_numbers":
             digits = re.sub(r'\D', '', value)
