@@ -147,21 +147,40 @@ async def process_message(
 
         scam_result = scam_detector.analyze(current_message.text)
 
-        # Update session with scam status
-        session_manager.update_session(
-            session_id,
-            is_scam=scam_result["is_scam"],
-            scam_type=scam_result.get("scam_type", "unknown"),
-            confidence_score=scam_result.get("confidence_score", 0.0),
-            message_count=total_messages
-        )
-
-        logger.info(
-            f"Scam detection for {session_id}: "
-            f"is_scam={scam_result['is_scam']}, "
-            f"type={scam_result.get('scam_type')}, "
-            f"confidence={scam_result.get('confidence_score')}"
-        )
+        # CRITICAL FIX: Once a session is detected as scam, it stays in scam mode
+        # Don't override session.is_scam if it's already True
+        if not session.is_scam and scam_result["is_scam"]:
+            # First scam detection in this session
+            session_manager.update_session(
+                session_id,
+                is_scam=True,
+                scam_type=scam_result.get("scam_type", "unknown"),
+                confidence_score=scam_result.get("confidence_score", 0.0),
+                message_count=total_messages
+            )
+            logger.info(
+                f"🚨 SCAM DETECTED for {session_id}: "
+                f"type={scam_result.get('scam_type')}, "
+                f"confidence={scam_result.get('confidence_score')}"
+            )
+        elif session.is_scam:
+            # Session already in scam mode - just update message count
+            session_manager.update_session(
+                session_id,
+                message_count=total_messages
+            )
+            logger.info(
+                f"Continuing scam session {session_id}: "
+                f"message {total_messages}, type={session.scam_type}"
+            )
+        else:
+            # Not a scam (yet)
+            session_manager.update_session(
+                session_id,
+                is_scam=False,
+                message_count=total_messages
+            )
+            logger.info(f"No scam detected for {session_id}")
 
         # ====================================================================
         # STEP 3: Intelligence Extraction
@@ -213,6 +232,7 @@ async def process_message(
         # STEP 4: Agent Response Generation
         # ====================================================================
 
+        # FIXED: Use AI agent if session is marked as scam (persistent state)
         if session.is_scam:
             # Agent activated - generate contextual response
 
@@ -239,7 +259,10 @@ async def process_message(
                 scam_type=session.scam_type
             )
 
-            logger.info(f"Agent response generated for {session_id}")
+            logger.info(
+                f"🤖 Agent response generated for {session_id} "
+                f"(message {total_messages}, scam type: {session.scam_type})"
+            )
 
         else:
             # No scam detected - neutral response
