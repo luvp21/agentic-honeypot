@@ -158,12 +158,12 @@ class SessionManager:
                     if raw_item.source not in item.sources:
                         item.sources.append(raw_item.source)
 
-                    # Update timestamps
-                    item.last_seen_msg = max(item.last_seen_msg, raw_item.message_index)
-
-                    # Confidence Logic: Repeated intel boosts confidence
-                    # Cap at 2.0
                     if item.confidence < 2.0:
+                        # Only update timestamp if we are still building confidence
+                        # This prevents "Stability Deadlock" where repetitive high-conf intel
+                        # keeps last_seen_msg fresh, preventing the stability window from closing.
+                        item.last_seen_msg = max(item.last_seen_msg, raw_item.message_index)
+
                         item.confidence += 0.3
                         item.confidence = min(item.confidence, 2.0)
 
