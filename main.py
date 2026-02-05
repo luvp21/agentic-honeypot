@@ -359,6 +359,27 @@ async def get_stats(api_key: str = Depends(verify_api_key)):
     }
 
 
+@app.get("/debug/session/{session_id}")
+async def get_session_debug(session_id: str, api_key: str = Depends(verify_api_key)):
+    """
+    DEBUG ENDPOINT: Get full state of a specific session.
+    Use this to verify what intelligence was extracted.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"status": "error", "message": "Session not found"}
+
+    return {
+        "status": "success",
+        "session": {
+            "is_scam": session.is_scam,
+            "message_count": session.message_count,
+            "extracted_intelligence": session.extracted_intelligence,
+            "callback_sent": session.callback_sent
+        }
+    }
+
+
 # ============================================================================
 # APPLICATION STARTUP
 # ============================================================================
