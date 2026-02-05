@@ -88,9 +88,13 @@ class SessionManager:
         """
         Determine if callback should be sent for this session.
 
+        INTELLIGENT TRIGGER: Sends callback when sufficient intelligence is extracted,
+        not at a fixed message count. This adapts to conversation length.
+
         Conditions:
         - Scam must be detected
-        - Minimum message threshold met
+        - Minimum message threshold met (default: 5)
+        - Sufficient intelligence extracted (see has_sufficient_intelligence)
         - Callback not already sent
 
         Args:
@@ -102,11 +106,63 @@ class SessionManager:
         """
         session = self.get_or_create_session(session_id)
 
-        return (
-            session.is_scam and
-            session.message_count >= min_messages and
-            not session.callback_sent
-        )
+        # Check basic conditions
+        if not session.is_scam:
+            return False
+
+        if session.callback_sent:
+            return False
+
+        if session.message_count < min_messages:
+            return False
+
+        # INTELLIGENT TRIGGER: Check if we have sufficient intelligence
+        return self._has_sufficient_intelligence(session)
+
+    def _has_sufficient_intelligence(self, session: 'SessionState') -> bool:
+        """
+        Determine if enough intelligence has been extracted to send callback.
+
+        Intelligence is considered "sufficient" if we have:
+        - At least 2 different types of critical data (UPIs, bank accounts, phishing links)
+        - OR at least 3 total intelligence items
+
+        This ensures we don't send empty/low-value callbacks.
+
+        Args:
+            session: Session to check
+
+        Returns:
+            True if sufficient intelligence extracted
+        """
+        intel = session.extracted_intelligence
+
+        # Count critical intelligence types
+        critical_types = 0
+        total_items = 0
+
+        # Critical data types that indicate scammer has revealed payment info
+        if intel.get("upi_ids"):
+            critical_types += 1
+            total_items += len(intel["upi_ids"])
+
+        if intel.get("bank_accounts"):
+            critical_types += 1
+            total_items += len(intel["bank_accounts"])
+
+        if intel.get("phishing_links"):
+            critical_types += 1
+            total_items += len(intel["phishing_links"])
+
+        # Also count other valuable data
+        if intel.get("phone_numbers"):
+            total_items += len(intel["phone_numbers"])
+
+        if intel.get("ifsc_codes"):
+            total_items += len(intel["ifsc_codes"])
+
+        # Send if we have at least 2 critical types OR 3+ total items
+        return critical_types >= 2 or total_items >= 3
 
     def mark_callback_sent(self, session_id: str):
         """

@@ -270,13 +270,13 @@ async def process_message(
             logger.info(f"Neutral response for {session_id} (no scam detected)")
 
         # ====================================================================
-        # STEP 5: Callback Trigger Check
+        # STEP 5: Callback Trigger Check (Intelligent)
         # ====================================================================
-        # Changed to 20 messages to capture ALL intelligence from entire conversation
-        # This ensures UPIs, phishing links, and other data mentioned later are included
+        # INTELLIGENT TRIGGER: Sends based on intelligence extracted, not message count
+        # Will send when: min 5 msgs + has critical data (UPIs/accounts/links)
 
-        if session_manager.should_send_callback(session_id, min_messages=20):
-            logger.info(f"Callback conditions met for {session_id}")
+        if session_manager.should_send_callback(session_id, min_messages=5):
+            logger.info(f"🎯 Callback conditions met for {session_id} (sufficient intelligence extracted)")
 
             # Send callback
             callback_success = send_callback_with_retry(
