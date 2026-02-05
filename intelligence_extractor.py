@@ -1,40 +1,44 @@
 """
-Intelligence Extractor with CamelCase Mapping
-Extracts sensitive information from scammer messages
-ADAPTED FOR HACKATHON COMPLIANCE
+Intelligence extraction with context-aware patterns for accurate identification.
 """
 
 import re
-from typing import Dict, List, Optional
-from datetime import datetime
+from typing import Dict, List
 
 
 class IntelligenceExtractor:
+    """
+    Extracts intelligence from messages using context-aware patterns.
+
+    STRATEGY:
+    1. CONTEXT-AWARE: Look for labeled data ("account number 123", "UPI: xyz@bank")
+    2. GENERIC PATTERNS: Fallback to pattern matching for unlabeled data
+    3. VALIDATION: Clean and validate all extracted data
+
+    This prevents misidentification (e.g., phone numbers extracted as accounts).
+    """
+
     def __init__(self):
-        # Regex patterns for different data types
-        self.patterns = {
+        """Initialize with generic fallback patterns."""
+        # These are FALLBACK patterns when context is missing
+        self.fallback_patterns = {
             "bank_accounts": [
-                r'\b\d{9,18}\b',  # Generic bank account (9-18 digits)
-                r'\b[0-9]{4}[0-9]{4}[0-9]{4}[0-9]{4}\b',  # 16 digit format
-                r'account\s*(?:number|no|#)?\s*:?\s*(\d{9,18})',
-                r'A/C\s*:?\s*(\d{9,18})',
+                r'\b\d{12,18}\b',  # Only longer numbers (avoid phone confusion)
             ],
             "upi_ids": [
-                # Catch ALL UPI-format strings (username@provider)
-                r'\b[\w\.-]+@(?:paytm|phonepe|googlepay|gpay|amazonpay|bhim|ybl|okaxis|oksbi|okhdfcbank|okicici|axisbank|hdfcbank|sbi|pnb|icici)\b',
-                r'\b[\w\.-]+@[a-z]+bank\b',  # Catch fake banks like @fakebank
-                r'\b[\w\.-]+@[\w-]+\b(?=.*(?:upi|pay|wallet))',  # UPI-context based
+                r'\b[\w\.-]+@(?:paytm|phonepe|googlepay|gpay|amazonpay|bhim|ybl|okaxis|oksbi|ok hdfc bank|okicici|axisbank|hdfcbank|sbi|pnb|icici)\b',
+                r'\b[\w\.-]+@[a-z]+bank\b',  # Fake banks like @fakebank
+                r'\b[\w\.-]+@[\w-]+\b(?=.*(?:upi|pay|wallet))',
             ],
             "phone_numbers": [
-                r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
-                r'\b\d{10}\b',
-                r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b',
+                r'\+\d{1,3}[-\s]?\d{10}',  # International format (+91-9876543210)
+                r'\b\d{10}\b',  # Standalone 10 digits (less priority)
             ],
             "email_addresses": [
                 r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
             ],
             "phishing_links": [
-                r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.\&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+                r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
                 r'www\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}',
             ],
             "ifsc_codes": [
@@ -44,32 +48,132 @@ class IntelligenceExtractor:
 
     def extract(self, message: str) -> Dict:
         """
-        Extract all intelligence from a message.
+        Extract intelligence using CONTEXT-AWARE patterns.
+
+        Priority:
+        1. Context-labeled data (highest accuracy)
+        2. Generic patterns (lower accuracy)
+        3. Validation and deduplication
 
         Args:
-            message: Text message to analyze
+            message: Text to analyze
 
         Returns:
-            Dictionary with extracted data categorized by type (snake_case keys)
+            Dict with categorized intelligence
         """
         extracted = {}
+        text_lower = message.lower()
 
-        # Extract each data type
-        for data_type, patterns in self.patterns.items():
-            matches = []
-            for pattern in patterns:
-                found = re.findall(pattern, message, re.IGNORECASE)
-                if found:
-                    matches.extend([self._clean_match(m) for m in found])
+        # ==============================================================
+        # STEP 1: CONTEXT-AWARE EXTRACTION (Labeled Data - High Priority)
+        # ==============================================================
 
-            # Remove duplicates and filter
-            matches = list(set(matches))
-            matches = [m for m in matches if self._is_valid(m, data_type)]
-
+        # Bank Accounts with context
+        account_patterns = [
+            r'account\s*(?:number|no|#)?\s*(?:is|:)?\s*(\d{9,18})',
+            r'a/?c\s*(?:number|no)?\s*:?\s*(\d{9,18})',
+            r'bank\s*account\s*:?\s*(\d{9,18})',
+        ]
+        for pattern in account_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
             if matches:
-                extracted[data_type] = matches
+                if "bank_accounts" not in extracted:
+                    extracted["bank_accounts"] = []
+                extracted["bank_accounts"].extend(matches)
 
-        # Special handling for UPI IDs vs Email addresses
+        # UPI IDs with context
+        upi_patterns = [
+            r'upi\s*(?:id)?\s*(?:is|:)?\s*([\w\.-]+@[\w-]+)',
+            r'(?:my|our)\s*upi\s*:?\s*([\w\.-]+@[\w-]+)',
+            r'transfer\s+to\s+([\w\.-]+@[\w-]+)',
+        ]
+        for pattern in upi_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                if "upi_ids" not in extracted:
+                    extracted["upi_ids"] = []
+                extracted["upi_ids"].extend(matches)
+
+        # Phone numbers with context
+        phone_patterns = [
+            r'phone\s*(?:number)?\s*(?:is|:)?\s*([\+\d][\d\s\-\(\)]{8,})',
+            r'(?:call|contact)\s+(?:us|me)?\s*(?:at|on)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
+            r'mobile\s*(?:number)?\s*:?\s*([\+\d][\d\s\-\(\)]{8,})',
+        ]
+        for pattern in phone_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                if "phone_numbers" not in extracted:
+                    extracted["phone_numbers"] = []
+                extracted["phone_numbers"].extend(matches)
+
+        # IFSC codes with context
+        ifsc_patterns = [
+            r'ifsc\s*(?:code)?\s*(?:is|:)?\s*([A-Z]{4}0[A-Z0-9]{6})',
+        ]
+        for pattern in ifsc_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                if "ifsc_codes" not in extracted:
+                    extracted["ifsc_codes"] = []
+                extracted["ifsc_codes"].extend(matches)
+
+        # Links and emails (no context needed - unique enough)
+        for pattern in self.fallback_patterns["phishing_links"]:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                if "phishing_links" not in extracted:
+                    extracted["phishing_links"] = []
+                extracted["phishing_links"].extend(matches)
+
+        for pattern in self.fallback_patterns["email_addresses"]:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                if "email_addresses" not in extracted:
+                    extracted["email_addresses"] = []
+                extracted["email_addresses"].extend(matches)
+
+        # ==============================================================
+        # STEP 2: GENERIC FALLBACK (Only if context didn't find anything)
+        # ==============================================================
+
+        for data_type, patterns in self.fallback_patterns.items():
+            # Skip if already extracted via context (higher priority)
+            if data_type in extracted and len(extracted[data_type]) > 0:
+                continue
+
+            # Skip links/emails (already done above)
+            if data_type in ["phishing_links", "email_addresses"]:
+                continue
+
+            for pattern in patterns:
+                matches = re.findall(pattern, message, re.IGNORECASE)
+                if matches:
+                    if data_type not in extracted:
+                        extracted[data_type] = []
+                    extracted[data_type].extend(matches)
+
+        # ==============================================================
+        # STEP 3: CLEAN, VALIDATE, DEDUPLICATE
+        # ==============================================================
+
+        for data_type in list(extracted.keys()):
+            cleaned = []
+            seen = set()
+
+            for match in extracted[data_type]:
+                clean = self._clean_match(match, data_type)
+                if clean and clean not in seen:
+                    if self._is_valid(clean, data_type):
+                        cleaned.append(clean)
+                        seen.add(clean)
+
+            if cleaned:
+                extracted[data_type] = cleaned
+            else:
+                del extracted[data_type]
+
+        # Remove UPI IDs from emails (UPI takes priority)
         if "upi_ids" in extracted and "email_addresses" in extracted:
             upi_set = set(extracted["upi_ids"])
             extracted["email_addresses"] = [
@@ -81,54 +185,47 @@ class IntelligenceExtractor:
 
         return extracted
 
-    def _clean_match(self, match: str) -> str:
-        """Clean extracted match"""
-        cleaned = ' '.join(match.split())
-        cleaned = cleaned.strip('.,;:!?')
-        return cleaned
+    def _clean_match(self, match: str, data_type: str) -> str:
+        """Clean extracted match."""
+        if isinstance(match, tuple):
+            match = match[0] if match else ""
+
+        match = match.strip()
+
+        if data_type == "phone_numbers":
+            # Keep formatting for readability
+            return match
+        elif data_type == "bank_accounts":
+            # Remove any spaces/dashes
+            return re.sub(r'[\s\-]', '', match)
+
+        return match
 
     def _is_valid(self, value: str, data_type: str) -> bool:
-        """Validate extracted value based on its type"""
-
-        if not value or len(value) < 3:
+        """Validate extracted value."""
+        if not value or len(value) < 2:
             return False
 
         if data_type == "bank_accounts":
-            if not value.replace(' ', '').isdigit():
-                return False
-            digit_count = len(value.replace(' ', ''))
-            return 9 <= digit_count <= 18
+            # Must be 9-18 digits
+            digits = re.sub(r'\D', '', value)
+            return 9 <= len(digits) <= 18
 
         elif data_type == "upi_ids":
-            if '@' not in value:
-                return False
+            # Must have @ symbol and reasonable format
             parts = value.split('@')
             if len(parts) != 2:
                 return False
-
-            # Accept both real AND fake UPI IDs (scammers use fake ones)
-            # Check if it looks like a UPI ID (reasonable format)
             username, domain = parts
-            if len(username) < 2 or len(domain) < 3:
-                return False
-
-            # Exclude email addresses (must have proper TLD)
-            if '.' in domain and len(domain.split('.')[-1]) > 3:
-                return False  # Looks more like email
-
-            return True  # Accept all UPI-format strings
+            return len(username) >= 2 and len(domain) >= 3
 
         elif data_type == "phone_numbers":
+            # Must have 10-13 digits
             digits = re.sub(r'\D', '', value)
-            return 10 <= len(digits) <= 15
-
-        elif data_type == "email_addresses":
-            return '@' in value and '.' in value.split('@')[1]
-
-        elif data_type == "phishing_links":
-            return value.startswith(('http://', 'https://', 'www.'))
+            return 10 <= len(digits) <= 13
 
         elif data_type == "ifsc_codes":
-            return len(value) == 11 and value[4] == '0' and value[:4].isalpha()
+            # Exactly 11 characters, 5th must be 0
+            return len(value) == 11 and value[4] == '0'
 
         return True
