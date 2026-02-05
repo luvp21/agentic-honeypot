@@ -116,6 +116,26 @@ class IntelligenceExtractor:
                 message_index=message_index
             ))
 
+        # 2.3.b UPI IDs (Contextual Fallback for Unknown Handles)
+        # Allow any handle IF context explicitly mentions "UPI"
+        if "upi" in full_text.lower():
+            # Regex for generic handle (user@bank)
+            generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
+            for match in re.finditer(generic_upi_pattern, text):
+                val = match.group(1)
+                # Avoid duplicates with strict extraction
+                if any(x.value == val and x.type == "upi_ids" for x in extracted):
+                    continue
+
+                extracted.append(RawIntel(
+                    type="upi_ids",
+                    value=val,
+                    source="context_fallback", # Lower confidence source? Or context?
+                    # "Context contains UPI" is strong signal.
+                    confidence_delta=1.0,
+                    message_index=message_index
+                ))
+
         # 2.4 Phone Numbers (Strict + Negative Context)
         # Regex: (?<!\d)(?:\+91[\s-]?)?[6-9]\d{9}(?!\d)
         phone_pattern = r'(?<!\d)(?:\+91[\s-]?)?([6-9]\d{9})(?!\d)'
