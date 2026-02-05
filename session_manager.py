@@ -91,10 +91,14 @@ class SessionManager:
         INTELLIGENT TRIGGER: Sends callback when sufficient intelligence is extracted,
         not at a fixed message count. This adapts to conversation length.
 
+        TWO-TIER TRIGGER SYSTEM:
+        1. Primary: 5+ messages + rich intelligence (2 critical types OR 3+ items)
+        2. Fallback: 10+ messages + ANY intelligence - for when scammer stops replying
+
         Conditions:
         - Scam must be detected
         - Minimum message threshold met (default: 5)
-        - Sufficient intelligence extracted (see has_sufficient_intelligence)
+        - Sufficient intelligence extracted OR fallback timeout reached
         - Callback not already sent
 
         Args:
@@ -116,8 +120,16 @@ class SessionManager:
         if session.message_count < min_messages:
             return False
 
-        # INTELLIGENT TRIGGER: Check if we have sufficient intelligence
-        return self._has_sufficient_intelligence(session)
+        # PRIMARY TRIGGER: Rich intelligence after minimum messages
+        if self._has_sufficient_intelligence(session):
+            return True
+
+        # FALLBACK TRIGGER: Scammer stopped replying - send whatever we have
+        # After 10 messages, send if we have ANY intelligence at all
+        if session.message_count >= 10 and self._has_any_intelligence(session):
+            return True
+
+        return False
 
     def _has_sufficient_intelligence(self, session: 'SessionState') -> bool:
         """
@@ -163,6 +175,25 @@ class SessionManager:
 
         # Send if we have at least 2 critical types OR 3+ total items
         return critical_types >= 2 or total_items >= 3
+
+    def _has_any_intelligence(self, session: 'SessionState') -> bool:
+        """
+        Check if we have ANY intelligence at all (fallback for when scammer stops).
+
+        Args:
+            session: Session to check
+
+        Returns:
+            True if any intelligence exists
+        """
+        intel = session.extracted_intelligence
+
+        # Check if any intelligence field has data
+        for key, value in intel.items():
+            if isinstance(value, list) and len(value) > 0:
+                return True
+
+        return False
 
     def mark_callback_sent(self, session_id: str):
         """
