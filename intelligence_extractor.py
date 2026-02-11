@@ -194,3 +194,85 @@ class IntelligenceExtractor:
                         ))
 
         return extracted
+
+    def extract_from_full_history(
+        self,
+        messages: List,  # List[MessageContent]
+        current_index: int
+    ) -> List[RawIntel]:
+        """
+        Extract intelligence from ENTIRE conversation history.
+        Used for backfill to ensure nothing is missed across turns.
+
+        This runs periodically (e.g., every 5 turns) to catch:
+        - Cross-message references
+        - Partial information completion
+        - Missed patterns
+
+        Args:
+            messages: Full conversation history (MessageContent objects)
+            current_index: Current message index
+
+        Returns:
+            List of RawIntel from entire history
+        """
+        all_intel = []
+
+        # Build full conversation text
+        full_text = " ".join([msg.text for msg in messages])
+
+        # Extract from full text with current index
+        # We'll mark these with a special source "backfill"
+        extracted = self.extract(
+            text=full_text,
+            message_index=current_index,
+            context_window=""
+        )
+
+        # Re-mark source as backfill
+        for item in extracted:
+            if item.source != "backfill":
+                item.source = f"backfill_{item.source}"
+                # Slight penalty for backfill (already tracked separately)
+                item.confidence_delta *= 0.8
+
+        return extracted
+
+    def normalize_value(self, value: str, intel_type: str) -> str:
+        """
+        Normalize values for better deduplication.
+
+        Args:
+            value: Raw value
+            intel_type: Type of intelligence
+
+        Returns:
+            Normalized value
+        """
+        # Phone numbers: remove spaces, dashes, parentheses
+        if intel_type == "phone_numbers":
+            return "".join(filter(str.isdigit, value))
+
+        # Bank accounts: digits only
+        if intel_type == "bank_accounts":
+            return "".join(filter(str.isdigit, value))
+
+        # IFSC: uppercase, no spaces
+        if intel_type == "ifsc_codes":
+            return value.upper().strip()
+
+        # UPI: lowercase, trim
+        if intel_type == "upi_ids":
+            return value.lower().strip()
+
+        # URLs: lowercase
+        if intel_type == "phishing_links":
+            return value.lower().strip()
+
+        # Keywords: lowercase
+        if intel_type == "suspicious_keywords":
+            return value.lower().strip()
+
+        # Default: trim and lowercase
+        return value.strip().lower()
+

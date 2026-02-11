@@ -1,23 +1,34 @@
 """
 Session Manager for Honeypot System
-Manages session state using sessionId as primary key
+Manages session state using sessionId as primary key with explicit state machine
 """
 
-from typing import Dict, Optional
-from datetime import datetime
-from models import SessionState, IntelItem
+from typing import Dict, Optional, List
+from datetime import datetime, timedelta
+from models import SessionState, IntelItem, SessionStateEnum, MessageContent, ScammerProfile
+from behavioral_profiler import BehavioralProfiler
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SessionManager:
     """
-    Manages conversation sessions.
-    Stateless design - can reconstruct state from conversationHistory.
+    Manages conversation sessions with explicit state machine lifecycle.
+    Tracks full conversation history and behavioral profiles.
     """
 
     def __init__(self):
         # In-memory session store: {sessionId: SessionState}
         # In production, replace with Redis/database
         self.sessions: Dict[str, SessionState] = {}
+
+        # Behavioral profiler for scammer analysis
+        self.profiler = BehavioralProfiler()
+
+        # Configuration
+        self.MAX_TURNS_THRESHOLD = 15  # Minimum turns before finalization
+        self.IDLE_TIMEOUT_SECONDS = 60  # Max idle time before finalization
 
     def get_or_create_session(self, session_id: str) -> SessionState:
         """
@@ -88,41 +99,145 @@ class SessionManager:
         # Add 1 for the current message
         return len(conversation_history) + 1
 
-    def should_send_callback(self, session_id: str, min_messages: int = 5) -> bool:
+    def transition_state(
+        self,
+        session_id: str,
+        new_state: SessionStateEnum
+    ) -> bool:
         """
-        Determine if callback should be sent for this session.
+        Transition session to new state with validation.
+        Enforces proper state machine flow.
 
-        INTELLIGENT TRIGGER: Sends callback when sufficient intelligence is extracted,
-        not at a fixed message count. This adapts to conversation length.
+        Args:
+            session_id: Session identifier
+            new_state: Target state
 
-        TWO-TIER TRIGGER SYSTEM:
-        1. Primary: 5+ messages + rich intelligence (2 critical types OR 3+ items)
-        2. Fallback: 10+ messages + ANY intelligence - for when scammer stops replying
+        Returns:
+            True if transition successful, False if invalid
+        """
+        session = self.get_or_create_session(session_id)
+        old_state = session.state
 
-        Conditions:
-        - Scam must be detected
-        - Minimum message threshold met (default: 5)
-        - Sufficient intelligence extracted OR fallback timeout reached
-        - Callback not already sent
+        # Define valid transitions
+        valid_transitions = {
+            SessionStateEnum.INIT: [SessionStateEnum.SCAM_DETECTED],
+            SessionStateEnum.SCAM_DETECTED: [SessionStateEnum.ENGAGING, SessionStateEnum.FINALIZED],
+            SessionStateEnum.ENGAGING: [SessionStateEnum.EXTRACTING, SessionStateEnum.FINALIZED],
+            SessionStateEnum.EXTRACTING: [SessionStateEnum.FINALIZED],
+            SessionStateEnum.FINALIZED: []  # Terminal state
+        }
+
+        # Check if transition is valid
+        if new_state not in valid_transitions.get(old_state, []):
+            logger.warning(
+                f"Invalid state transition for {session_id}: "
+                f"{old_state} → {new_state}"
+            )
+            return False
+
+        # Perform transition
+        session.state = new_state
+        session.last_updated = datetime.utcnow()
+
+        logger.info(
+            f"State transition for {session_id}: {old_state} → {new_state}"
+        )
+
+        return True
+
+    def is_finalized(self, session_id: str) -> bool:
+        """
+        Check if session should be finalized based on thresholds.
+
+        Finalization criteria:
+        1. Max turns reached (15+)
+        2. Idle timeout exceeded (60s)
+        3. Already in FINALIZED state
 
         Args:
             session_id: Session to check
-            min_messages: Minimum messages before callback (default: 5)
 
         Returns:
-            True if callback should be sent, False otherwise
+            True if should finalize
         """
         session = self.get_or_create_session(session_id)
 
-        # Check basic conditions
+        # Already finalized
+        if session.state == SessionStateEnum.FINALIZED:
+            return True
+
+        # Not a scam - don't finalize
         if not session.is_scam:
             return False
 
-        if session.callback_sent:
-            return False
+        # Check max turns
+        if session.message_count >= self.MAX_TURNS_THRESHOLD:
+            logger.info(
+                f"Session {session_id} reached max turns: {session.message_count}"
+            )
+            return True
 
-        if session.message_count < min_messages:
-            return False
+        # Check idle timeout
+        idle_time = datetime.utcnow() - session.last_activity_time
+        if idle_time.total_seconds() >= self.IDLE_TIMEOUT_SECONDS:
+            logger.info(
+                f"Session {session_id} exceeded idle timeout: {idle_time.total_seconds()}s"
+            )
+            return True
+
+        return False
+
+    def update_scammer_profile(
+        self,
+        session_id: str,
+        message: str,
+        scam_type: str = None
+    ) -> None:
+        """
+        Update behavioral profile based on scammer message.
+
+        Args:
+            session_id: Session identifier
+            message: Scammer message text
+            scam_type: Detected scam type (optional)
+        """
+        session = self.get_or_create_session(session_id)
+
+        # Update profile using behavioral profiler
+        session.scammer_profile = self.profiler.update_profile(
+            session.scammer_profile,
+            message,
+            scam_type
+        )
+
+        session.last_updated = datetime.utcnow()
+
+    def store_full_message(
+        self,
+        session_id: str,
+        message: MessageContent
+    ) -> None:
+        """
+        Store complete message in session history for backfill extraction.
+
+        Args:
+            session_id: Session identifier
+            message: Message to store
+        """
+        session = self.get_or_create_session(session_id)
+        session.conversation_full.append(message)
+        session.last_activity_time = datetime.utcnow()
+        session.last_updated = datetime.utcnow()
+
+    def update_idle_time(self, session_id: str) -> None:
+        """
+        Update last activity time for idle detection.
+
+        Args:
+            session_id: Session identifier
+        """
+        session = self.get_or_create_session(session_id)
+        session.last_activity_time = datetime.utcnow()
 
     def update_intel_graph(self, session_id: str, new_intel_list: list) -> None:
         """
@@ -206,75 +321,51 @@ class SessionManager:
 
     def should_send_callback(self, session_id: str, current_msg_index: int) -> dict:
         """
-        Determine if callback should be sent and which type.
+        NEW LOGIC: Only send callback if session is FINALIZED.
 
-        Logic:
-        1. Min Viable Intel: At least one of phone, upi, bank_account
-        2. Stability: No new intel in last 3 messages (current_index - last_seen > 3)
-           OR Total Confidence >= 2.5
+        This ensures maximum engagement before callback.
+        Callback sent when:
+        1. State == FINALIZED (via is_finalized() checks)
+        2. Callback not already sent
+        3. Has minimum intelligence
 
         Returns:
-            {"send": bool, "type": "preliminary" | "final" | "delta"}
+            {"send": bool, "type": "final"}
         """
         session = self.get_or_create_session(session_id)
+
+        # Must be scam
         if not session.is_scam:
             return {"send": False, "type": "none"}
 
-        # Check Minimum Viable Intel
-        has_min_intel = False
-        critical_types = ["bank_accounts", "upi_ids", "phone_numbers"]
-        for c_type in critical_types:
-            if session.intel_graph.get(c_type):
-                has_min_intel = True
-                break
-
-        if not has_min_intel:
+        # Already sent
+        if session.callback_sent:
             return {"send": False, "type": "none"}
 
-        # Calculate Total Confidence
-        total_confidence = 0.0
-        most_recent_update = 0
+        # Must be in FINALIZED state
+        if session.state != SessionStateEnum.FINALIZED:
+            return {"send": False, "type": "none"}
+
+        # Check if we have ANY intelligence (even minimal)
+        has_intel = False
         for items in session.intel_graph.values():
-            for item in items:
-                total_confidence += item.confidence
-                most_recent_update = max(most_recent_update, item.last_seen_msg)
+            if items:
+                has_intel = True
+                break
 
-        # Stability Check
-        # specific "stability" means no new intel added in last 3 messages
-        messages_since_update = current_msg_index - most_recent_update
-        is_stable = messages_since_update >= 3
+        if not has_intel:
+            logger.warning(
+                f"Session {session_id} finalized but no intelligence extracted"
+            )
+            # Still send callback to report the scam even without intel
 
-        # Phase 1: Preliminary
-        # Send if we have min intel and haven't sent anything yet
-        if session.callback_phase == "none":
-            # Immediate preliminary callback if we have distinct intel
-            return {"send": True, "type": "preliminary"}
+        logger.info(
+            f"Callback trigger for {session_id}: "
+            f"State={session.state}, Messages={session.message_count}, "
+            f"Intel types={len(session.intel_graph)}"
+        )
 
-        # Phase 2: Final
-        # Send if stable OR high confidence, and haven't sent final yet
-        if session.callback_phase == "preliminary":
-            # Requirement: Fire if STABLE + CONFIDENT, OR if OVERWHELMINGLY CONFIDENT (Saturation Escape Hatch)
-            # This ensures we don't wait for silence if we already have perfect intelligence (e.g. Bank + UPI saturated = 4.0)
-            if (is_stable and total_confidence >= 2.5) or (total_confidence >= 4.0):
-                return {"send": True, "type": "final"}
-
-        # Phase 3: Delta
-        # If final sent, but we found something SIGNIFICANTLY new (high confidence)
-        if session.callback_phase == "final":
-            # Check for any NEW items with high confidence that haven't been reported?
-            # Simplified: If total confidence jumped significantly or new critical item found
-            # For now, just check if we have high confidence items that might be new
-            # Implementation detail: 'delta' requires tracking what was sent.
-            # We'll assume if we are here, we check for new high-conf items.
-            # But proper delta tracking is complex. Let's rely on the requirement:
-            # "New intel with confidence >= 0.7 appears"
-            # We need to filter for this in the caller or here.
-            # For now, let's just return False unless we track sent items.
-            # Given constraints, we will defer Delta logic to be triggered by the update loop if needed,
-            # but strictly, we return 'final' if not sent.
-            pass
-
-        return {"send": False, "type": "none"}
+        return {"send": True, "type": "final"}
 
     def mark_callback_sent(self, session_id: str, phase: str):
         """Update callback phase."""

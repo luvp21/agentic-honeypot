@@ -40,6 +40,7 @@ def generate_agent_notes(
     scam_type: str,
     total_messages: int,
     intelligence: ExtractedIntelligence,
+    scammer_profile=None,  # ScammerProfile object
     conversation_history: List = None
 ) -> str:
     """
@@ -49,6 +50,7 @@ def generate_agent_notes(
         scam_type: Type of scam detected
         total_messages: Number of messages exchanged
         intelligence: Extracted intelligence data
+        scammer_profile: Behavioral profile of scammer
         conversation_history: Optional conversation history
 
     Returns:
@@ -80,6 +82,26 @@ def generate_agent_notes(
         notes += ", ".join(items) + ". "
 
     # Add behavioral insights
+    if scammer_profile:
+        # Tactics
+        if scammer_profile.tactics:
+            tactics_str = ", ".join(scammer_profile.tactics)
+            notes += f"Scammer employed {tactics_str} tactics. "
+
+        # Language
+        if scammer_profile.language and scammer_profile.language != "unknown":
+            notes += f"Communication in {scammer_profile.language}. "
+
+        # Aggression
+        if scammer_profile.aggression_score > 0:
+            aggression_level = "low"
+            if scammer_profile.aggression_score > 0.7:
+                aggression_level = "high"
+            elif scammer_profile.aggression_score > 0.4:
+                aggression_level = "medium"
+            notes += f"Aggression level: {aggression_level}. "
+
+    # Add keyword-based insights
     if intelligence.suspiciousKeywords:
         notes += f"Scammer used urgency tactics: {', '.join(intelligence.suspiciousKeywords[:3])}. "
 
@@ -94,6 +116,7 @@ def send_final_callback(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
+    scammer_profile=None,  # NEW: ScammerProfile object
     conversation_history: List = None,
     status: str = "final"
 ) -> bool:
@@ -109,6 +132,7 @@ def send_final_callback(
         total_messages: Total message count
         extracted_intelligence: Intelligence dict (snake_case)
         scam_type: Type of scam
+        scammer_profile: Behavioral profile (NEW)
         conversation_history: Optional conversation data
         status: Callback status (preliminary/final/delta)
 
@@ -125,11 +149,12 @@ def send_final_callback(
         # Map intelligence to camelCase
         intelligence = map_intelligence_to_camelcase(extracted_intelligence)
 
-        # Generate agent notes
+        # Generate agent notes with behavioral profile
         agent_notes = generate_agent_notes(
             scam_type=scam_type,
             total_messages=total_messages,
             intelligence=intelligence,
+            scammer_profile=scammer_profile,  # NEW
             conversation_history=conversation_history
         )
 
@@ -183,6 +208,7 @@ def send_callback_with_retry(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
+    scammer_profile=None,  # NEW
     max_retries: int = 3,
     status: str = "final"
 ) -> bool:
@@ -195,6 +221,7 @@ def send_callback_with_retry(
         total_messages: Message count
         extracted_intelligence: Intelligence data
         scam_type: Scam type
+        scammer_profile: Behavioral profile (NEW)
         max_retries: Maximum retry attempts
         status: Callback status
 
@@ -215,6 +242,7 @@ def send_callback_with_retry(
             total_messages=total_messages,
             extracted_intelligence=extracted_intelligence,
             scam_type=scam_type,
+            scammer_profile=scammer_profile,  # NEW
             status=status
         )
 

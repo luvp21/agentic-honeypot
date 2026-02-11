@@ -1,150 +1,140 @@
 ---
-title: Agentic Honeypot API
+title: Agentic Honeypot
 emoji: 🍯
-colorFrom: yellow
-colorTo: yellow
+colorFrom: red
+colorTo: orange
 sdk: docker
 pinned: false
-app_port: 7860
+license: mit
+app_port: 8000
 ---
 
-# 🍯 AI Honeypot System for Scam Detection
+# 🍯 Agentic Honeypot - Enterprise Intelligence Extraction Platform
 
-An autonomous AI-powered honeypot system that detects scam messages and actively engages scammers using believable personas. The system extracts critical intelligence including bank accounts, UPI IDs, phishing links, and contact information.
+An enterprise-grade AI-powered honeypot system that autonomously detects scam attempts, engages scammers through multi-turn conversations, and extracts valuable intelligence using advanced behavioral profiling and continuous extraction strategies.
 
 ## 🚀 Features
 
-✅ **Automated Scam Detection** - Pattern-based detection with 70%+ accuracy
-✅ **AI-Powered Engagement** - Believable personas that keep scammers engaged
-✅ **Intelligence Extraction** - Automatically extracts bank accounts, UPI IDs, phishing links
-✅ **Multiple Scam Types** - Supports 7+ scam categories
-✅ **RESTful API** - FastAPI-based with automatic OpenAPI documentation
+### Core Capabilities
+- **🎯 Autonomous Scam Detection**: Real-time pattern matching and ML-based classification
+- **🤖 Multi-Turn AI Agent**: Maintains believable personas to maximize engagement
+- **📊 Continuous Intelligence Extraction**: Never stops extracting - runs on EVERY turn with backfill
+- **🧠 Behavioral Profiling**: Analyzes scammer tactics, language, and aggression patterns
+- **🔄 Explicit State Machine**: Proper lifecycle management (INIT → SCAM_DETECTED → ENGAGING → EXTRACTING → FINALIZED)
+- **⏱️ Delayed Callback Strategy**: Optimized for maximum engagement (15+ turns or 60s idle)
 
-## 📡 API Endpoints
+### Intelligence Extraction
+The system extracts and validates:
+- 💳 Bank Account Numbers (context-aware, with validation)
+- 💰 UPI IDs (strict handle verification)
+- 🏦 IFSC Codes (format validation + context boost)
+- 📱 Phone Numbers (negative context filtering)
+- 🔗 Phishing Links (URL detection)
+- 🚨 Suspicious Keywords (urgency/fear tactics)
 
-### Primary Endpoint
+### Behavioral Analysis
+Profiles scammer behavior including:
+- **Tactics**: URGENCY, FEAR, REWARD, AUTHORITY, SCARCITY
+- **Language**: English, Hinglish, Hindi detection
+- **Aggression Score**: 0.0-1.0 based on communication patterns
+
+## 🏗️ Architecture
+
+### State Machine Flow
+```
+INIT → SCAM_DETECTED → ENGAGING → EXTRACTING → FINALIZED
+```
+
+### Core Components
+- `models.py` - Data structures with state machine enums
+- `behavioral_profiler.py` - Scammer behavior analysis
+- `session_manager.py` - State transitions & lifecycle
+- `intelligence_extractor.py` - Pattern matching & extraction
+- `ai_agent.py` - Response generation
+- `callback.py` - External API communication
+- `main.py` - FastAPI orchestration
+
+## 🔧 API Usage
+
+### Endpoint
 ```
 POST /api/honeypot/message
 ```
 
-Send a message to the honeypot system for scam detection and AI engagement.
-
-**Headers:**
-- `x-api-key`: Your API key (required)
-
-**Request Body:**
+### Request Format
 ```json
 {
   "sessionId": "unique-session-id",
   "message": {
-    "text": "Your bank account is suspended...",
-    "sender": "user",
-    "timestamp": "2026-02-05T20:00:00Z"
+    "sender": "scammer",
+    "text": "URGENT! Your account will be blocked!",
+    "timestamp": 1707654321000
   },
-  "conversationHistory": [],
-  "metadata": {}
+  "conversationHistory": []
 }
 ```
 
-**Response:**
+### Response Format
 ```json
 {
   "status": "success",
-  "reply": "AI-generated response"
+  "reply": "What? I don't understand. What happened to my account?"
 }
 ```
 
-### Health Check
+## 📊 Intelligence Output
+
+When finalized (15+ turns or 60s idle), sends callback with:
+
+```json
+{
+  "sessionId": "session-123",
+  "scamDetected": true,
+  "totalMessagesExchanged": 18,
+  "extractedIntelligence": {
+    "bankAccounts": ["9876543210123456"],
+    "upiIds": ["scammer.fraud@paytm"],
+    "phishingLinks": ["http://fake-bank.com"],
+    "phoneNumbers": ["9876543210"],
+    "ifscCodes": ["HDFC0001234"],
+    "suspiciousKeywords": ["urgent", "verify", "blocked"]
+  },
+  "agentNotes": "Detected phishing scam. Engaged through 18 turns. Extracted 4 intel items. Scammer employed URGENCY, FEAR tactics. Communication in English. Aggression: high.",
+  "status": "final"
+}
 ```
-GET /health
-```
 
-Check if the API is operational.
+## 🎯 Optimization for Hackathons
 
-### Statistics
-```
-GET /stats
-```
+The system is optimized for hackathon scoring metrics:
+- **Maximum Engagement Duration**: Delays finalization to 15+ turns
+- **Continuous Extraction**: Never stops extracting intelligence
+- **Backfill Strategy**: Re-scans full conversation every 5 turns
+- **Rich Behavioral Insights**: Comprehensive `agentNotes` generation
 
-Get session statistics (requires API key).
+## 🔐 Security
 
-## 🔐 Authentication
+- API key authentication
+- Environment variable configuration
+- Rate limiting ready
+- Input validation
 
-All endpoints (except `/` and `/health`) require an API key in the `x-api-key` header.
+## 📝 Configuration
 
-Default API key: `honeypot-secret-key-123`
-
-**Important:** Change this in production by setting the `API_KEY` environment variable in your Space settings.
-
-## 📖 Documentation
-
-Interactive API documentation is available at:
-- Swagger UI: `/docs`
-- ReDoc: `/redoc`
-
-## 🎭 Supported Scam Types
-
-- **phishing** - Bank account verification scams
-- **lottery** - Fake prize notifications
-- **tech_support** - Fake virus alerts
-- **investment** - Crypto/trading scams
-- **romance** - Emotional manipulation
-- **job_offer** - Fake work-from-home offers
-- **impersonation** - Government official fraud
-
-## 🔧 Environment Variables
-
-Set these in your Space settings:
-
-- `API_KEY` - Custom API key for authentication (optional, defaults to demo key)
-- `CALLBACK_URL` - Webhook URL for scam intelligence callbacks (optional)
-
-## 📊 How It Works
-
-1. **Detection** - Incoming messages are analyzed for scam patterns
-2. **Engagement** - AI agent generates contextual responses using personas
-3. **Extraction** - System extracts intelligence (bank accounts, UPI IDs, etc.)
-4. **Callback** - After sufficient engagement, intelligence is sent to callback URL
-
-## 🛡️ Ethical Use
-
-This system is designed for:
-- Research and education
-- Scam detection and prevention
-- Security awareness training
-
-**Not for:** Unauthorized surveillance or privacy violations.
-
-## 📞 API Usage Example
-
+Adjust thresholds in `session_manager.py`:
 ```python
-import requests
-
-url = "https://YOUR_USERNAME-SPACE_NAME.hf.space/api/honeypot/message"
-headers = {"x-api-key": "honeypot-secret-key-123"}
-
-data = {
-    "sessionId": "test-session-1",
-    "message": {
-        "text": "Congratulations! You won $10,000. Click here to claim.",
-        "sender": "user",
-        "timestamp": "2026-02-05T20:00:00Z"
-    },
-    "conversationHistory": []
-}
-
-response = requests.post(url, json=data, headers=headers)
-print(response.json())
+MAX_TURNS_THRESHOLD = 15  # Minimum turns before finalization
+IDLE_TIMEOUT_SECONDS = 60  # Max idle time before finalization
 ```
 
-## 🏗️ Architecture
+## 🏆 Built For
 
-- **FastAPI** - Modern Python web framework
-- **Scam Detector** - Pattern-based detection engine
-- **AI Agent** - Persona-based response generator
-- **Intelligence Extractor** - Data extraction module
-- **Session Manager** - Conversation state management
+**GUVI Hackathon**: Scam Detection & Intelligence Extraction Challenge
 
-## 📝 License
+## 📄 License
 
-Built for educational and research purposes.
+MIT License - See LICENSE file for details
+
+---
+
+**Built with FastAPI, Pydantic, and advanced NLP techniques for enterprise-grade scam intelligence gathering.**

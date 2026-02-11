@@ -6,6 +6,40 @@ STRICTLY MATCHES OFFICIAL HACKATHON SPECIFICATION
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
+from enum import Enum
+
+
+# ============================================================================
+# SESSION STATE MACHINE & BEHAVIORAL PROFILING
+# ============================================================================
+
+class SessionStateEnum(str, Enum):
+    """
+    Explicit session lifecycle states.
+    Ensures proper flow: INIT → SCAM_DETECTED → ENGAGING → EXTRACTING → FINALIZED
+    """
+    INIT = "INIT"
+    SCAM_DETECTED = "SCAM_DETECTED"
+    ENGAGING = "ENGAGING"
+    EXTRACTING = "EXTRACTING"
+    FINALIZED = "FINALIZED"
+
+
+class ScammerProfile(BaseModel):
+    """
+    Behavioral profiling of scammer for intelligence analysis.
+    Used to generate rich agentNotes in final callback.
+    """
+    scam_type: str = "unknown"
+    tactics: List[str] = Field(
+        default_factory=list,
+        description="Detected tactics: URGENCY, FEAR, REWARD, AUTHORITY, SCARCITY"
+    )
+    language: str = "unknown"  # English, Hinglish, Hindi
+    aggression_score: float = Field(
+        default=0.0,
+        description="Aggression level 0.0-1.0 based on caps, threats, punctuation"
+    )
 
 
 # ============================================================================
@@ -122,12 +156,29 @@ class SessionState(BaseModel):
     scam_type: str = "unknown"
     confidence_score: float = 0.0
     message_count: int = 0
-    # New: Structured Intelligence Graph given per type
+
+    # State Machine (NEW)
+    state: SessionStateEnum = SessionStateEnum.INIT
+
+    # Behavioral Profiling (NEW)
+    scammer_profile: ScammerProfile = Field(default_factory=ScammerProfile)
+
+    # Full Conversation History (NEW) - for backfill extraction
+    conversation_full: List[MessageContent] = Field(default_factory=list)
+
+    # Idle Detection (NEW)
+    last_activity_time: datetime = Field(default_factory=datetime.utcnow)
+
+    # Intelligence Graph (Existing)
     intel_graph: Dict[str, List[IntelItem]] = Field(default_factory=dict)
-    # Keeping this for backward compatibility during migration, logic will be in SessionManager
+
+    # Backward compatibility dict (Existing)
     extracted_intelligence: dict = Field(default_factory=dict)
+
+    # Callback tracking (Existing)
     callback_sent: bool = False
-    # Track which callback phases have been sent
     callback_phase: str = "none"  # none, preliminary, final
+
+    # Timestamps (Existing)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_updated: datetime = Field(default_factory=datetime.utcnow)

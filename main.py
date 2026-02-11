@@ -17,7 +17,8 @@ from models import (
     HoneypotRequest,
     HoneypotResponse,
     ErrorResponse,
-    MessageContent
+    MessageContent,
+    SessionStateEnum  # NEW
 )
 
 # Import components
@@ -124,10 +125,16 @@ async def process_message(
         logger.info(f"Processing message for session {session_id}")
 
         # ====================================================================
-        # STEP 1: Session Management
+        # STEP 1: Session Management + State Tracking
         # ====================================================================
 
         session = session_manager.get_or_create_session(session_id)
+
+        # Store full message for backfill extraction
+        session_manager.store_full_message(session_id, current_message)
+
+        # Update idle tracking
+        session_manager.update_idle_time(session_id)
 
         # Check if first message
         is_first_message = session_manager.is_first_message(conversation_history)
@@ -135,59 +142,58 @@ async def process_message(
         # Calculate total messages
         total_messages = session_manager.calculate_total_messages(conversation_history)
 
+        # Update message count
+        session_manager.update_session(session_id, message_count=total_messages)
+
         logger.info(
-            f"Session {session_id}: "
-            f"Message {total_messages} "
-            f"(First: {is_first_message})"
+            f"Session {session_id}: Message {total_messages}, State: {session.state}"
         )
 
         # ====================================================================
-        # STEP 2: Scam Detection
+        # STEP 2: Scam Detection + State Transition
         # ====================================================================
 
         scam_result = scam_detector.analyze(current_message.text)
 
-        # CRITICAL FIX: Once a session is detected as scam, it stays in scam mode
-        # Don't override session.is_scam if it's already True
+        # State transition: INIT → SCAM_DETECTED
         if not session.is_scam and scam_result["is_scam"]:
             # First scam detection in this session
             session_manager.update_session(
                 session_id,
                 is_scam=True,
                 scam_type=scam_result.get("scam_type", "unknown"),
-                confidence_score=scam_result.get("confidence_score", 0.0),
-                message_count=total_messages
+                confidence_score=scam_result.get("confidence_score", 0.0)
             )
+
+            # Transition to SCAM_DETECTED state
+            session_manager.transition_state(session_id, SessionStateEnum.SCAM_DETECTED)
+
+            # Update behavioral profile
+            session_manager.update_scammer_profile(
+                session_id,
+                current_message.text,
+                scam_result.get("scam_type")
+            )
+
             logger.info(
                 f"🚨 SCAM DETECTED for {session_id}: "
                 f"type={scam_result.get('scam_type')}, "
                 f"confidence={scam_result.get('confidence_score')}"
             )
         elif session.is_scam:
-            # Session already in scam mode - just update message count
-            session_manager.update_session(
-                session_id,
-                message_count=total_messages
-            )
+            # Update behavioral profile on each scammer message
+            if current_message.sender == "scammer":
+                session_manager.update_scammer_profile(
+                    session_id,
+                    current_message.text
+                )
             logger.info(
                 f"Continuing scam session {session_id}: "
-                f"message {total_messages}, type={session.scam_type}"
+                f"message {total_messages}, type={session.scam_type}, state={session.state}"
             )
-        else:
-            # Not a scam (yet)
-            session_manager.update_session(
-                session_id,
-                is_scam=False,
-                message_count=total_messages
-            )
-            logger.info(f"No scam detected for {session_id}")
 
         # ====================================================================
-        # STEP 3: Intelligence Extraction
-        # ====================================================================
-
-        # ====================================================================
-        # STEP 3: Intelligence Extraction
+        # STEP 3: CONTINUOUS Intelligence Extraction (ALWAYS RUNS)
         # ====================================================================
 
         # Build context window from last 5 messages
@@ -197,6 +203,7 @@ async def process_message(
         # Message index is total messages - 1 (0-indexed)
         msg_index = total_messages - 1
 
+        # CRITICAL: Extract from EVERY message (continuous extraction)
         extracted_list = intel_extractor.extract(
             text=current_message.text,
             message_index=msg_index,
@@ -206,15 +213,23 @@ async def process_message(
         if extracted_list:
             # Update session graph
             session_manager.update_intel_graph(session_id, extracted_list)
-
             # Log what was found
             found_types = list(set([x.type for x in extracted_list]))
             logger.info(f"Intelligence extracted for {session_id}: {found_types}")
 
-        # Add suspicious keywords from scam detector (Legacy support for keyword tracking)
+        # Backfill extraction every 5 turns (full history scan)
+        if msg_index % 5 == 0 and msg_index > 0:
+            logger.info(f"Running backfill extraction for {session_id} at turn {msg_index}")
+            backfill_intel = intel_extractor.extract_from_full_history(
+                session.conversation_full,
+                msg_index
+            )
+            if backfill_intel:
+                session_manager.update_intel_graph(session_id, backfill_intel)
+                logger.info(f"Backfill found {len(backfill_intel)} additional items")
+
+        # Add suspicious keywords from scam detector
         if scam_result.get("indicators"):
-            # We can create RawIntel for these too if we want, or just stick to Graph
-            # For strict compliance, let's add them as 'suspicious_keywords' type to graph
             from intelligence_extractor import RawIntel
             keyword_intel = []
             for kw in scam_result["indicators"][:5]:
@@ -228,30 +243,40 @@ async def process_message(
             session_manager.update_intel_graph(session_id, keyword_intel)
 
         # ====================================================================
-        # STEP 4: Agent Response Generation
+        # STEP 4: State Transitions (ENGAGING → EXTRACTING)
         # ====================================================================
 
-        # FIXED: Use AI agent if session is marked as scam (persistent state)
         if session.is_scam:
-            # Agent activated - generate contextual response
+            # Transition progression based on turn count
+            if total_messages >= 3 and session.state == SessionStateEnum.SCAM_DETECTED:
+                session_manager.transition_state(session_id, SessionStateEnum.ENGAGING)
+                logger.info(f"Session {session_id} transitioned to ENGAGING phase")
 
-            # specific check for missing intelligence to guide the agent
+            elif total_messages >= 7 and session.state == SessionStateEnum.ENGAGING:
+                session_manager.transition_state(session_id, SessionStateEnum.EXTRACTING)
+                logger.info(f"Session {session_id} transitioned to EXTRACTING phase")
+
+        # ====================================================================
+        # STEP 5: Agent Response Generation
+        # ====================================================================
+
+        if session.is_scam:
+            # Determine missing intelligence to guide agent
             missing_intel = []
-            features = session.extracted_intelligence # Use legacy dict for easy check
+            features = session.extracted_intelligence
 
             if not features.get("bank_accounts"):
                 missing_intel.append("bank_accounts")
-            elif not features.get("ifsc_codes"): # Only need IFSC if we have account
-                 missing_intel.append("ifsc_codes")
+            elif not features.get("ifsc_codes"):
+                missing_intel.append("ifsc_codes")
 
             if not features.get("upi_ids"):
                 missing_intel.append("upi_ids")
 
             if not features.get("phone_numbers"):
-                # Lower priority but good to have
-                pass
+                missing_intel.append("phone_numbers")
 
-            # Convert conversationHistory to agent format
+            # Convert conversation history to agent format
             agent_history = []
             for msg in conversation_history:
                 agent_history.append({
@@ -276,8 +301,8 @@ async def process_message(
             )
 
             logger.info(
-                f"🤖 Agent response generated for {session_id} "
-                f"(message {total_messages}, scam type: {session.scam_type}, missing: {missing_intel})"
+                f"🤖 Agent response for {session_id}: "
+                f"turn {total_messages}, phase: {session.state}, missing: {missing_intel}"
             )
 
         else:
@@ -286,7 +311,18 @@ async def process_message(
             logger.info(f"Neutral response for {session_id} (no scam detected)")
 
         # ====================================================================
-        # STEP 5: Callback Trigger Check (Intelligent Stability-Based)
+        # STEP 6: Check Finalization Criteria
+        # ====================================================================
+
+        if session.is_scam and session_manager.is_finalized(session_id):
+            # Transition to FINALIZED state
+            session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
+            logger.info(
+                f"🏁 Session {session_id} FINALIZED at turn {total_messages}"
+            )
+
+        # ====================================================================
+        # STEP 7: Callback Trigger (ONLY if FINALIZED)
         # ====================================================================
 
         callback_status = session_manager.should_send_callback(session_id, msg_index)
@@ -295,28 +331,39 @@ async def process_message(
             callback_type = callback_status["type"]
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
-            # Send callback ONLY if final
-            if callback_type == "final":
-                callback_success = send_callback_with_retry(
-                    session_id=session_id,
-                    scam_detected=session.is_scam,
-                    total_messages=total_messages,
-                    extracted_intelligence=session.extracted_intelligence, # Legacy flat dict
-                    scam_type=session.scam_type,
-                    max_retries=3,
-                    status=callback_type
-                )
-            else:
-                logger.info(f"Processing internal phase transition: {callback_type}")
-                callback_success = True
+            # Send callback with scammer profile
+            callback_success = send_callback_with_retry(
+                session_id=session_id,
+                scam_detected=session.is_scam,
+                total_messages=total_messages,
+                extracted_intelligence=session.extracted_intelligence,
+                scam_type=session.scam_type,
+                scammer_profile=session.scammer_profile,  # NEW
+                max_retries=3,
+                status=callback_type
+            )
 
             if callback_success:
                 session_manager.mark_callback_sent(session_id, callback_type)
                 logger.info(f"✅ {callback_type.capitalize()} callback sent for {session_id}")
             else:
                 logger.error(f"❌ Callback failed for {session_id}")
+
+        # Comprehensive per-turn logging
+        intel_count = sum(len(v) for v in session.intel_graph.values())
+        logger.info(
+            f"\n========== TURN {total_messages} SUMMARY - {session_id} ==========\n"
+            f"State: {session.state}\n"
+            f"Scam Type: {session.scam_type}\n"
+            f"Intelligence Items: {intel_count}\n"
+            f"Extracted This Turn: {[r.type for r in extracted_list]}\n"
+            f"Missing Intel: {missing_intel if session.is_scam else 'N/A'}\n"
+            f"Callback Sent: {session.callback_sent}\n"
+            f"=========================================================="
+        )
+
         # ====================================================================
-        # STEP 6: Return Official Response Format
+        # STEP 8: Return Official Response Format
         # ====================================================================
 
         # CRITICAL: Return ONLY status and reply (no extra fields)
