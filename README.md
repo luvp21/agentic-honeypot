@@ -2,7 +2,7 @@
 title: Agentic Honeypot
 emoji: 🍯
 colorFrom: red
-colorTo: orange
+colorTo: pink
 sdk: docker
 pinned: false
 license: mit
