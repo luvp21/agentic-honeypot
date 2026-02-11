@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all application files
 COPY . .
 
-# Expose port 7860 (Hugging Face Spaces default)
-EXPOSE 7860
+# Expose port 8000 (configured in README.md)
+EXPOSE 8000
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
