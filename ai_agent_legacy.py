@@ -72,8 +72,7 @@ class AIHoneypotAgent:
         message: str,
         conversation_history: List[Dict],
         scam_type: str,
-        missing_intel: List[str] = None,
-        strategy: str = "DEFAULT"  # EngagementStrategyEnum value
+        missing_intel: List[str] = None
     ) -> str:
         """
         Generate a realistic response to scammer's message
@@ -82,158 +81,39 @@ class AIHoneypotAgent:
             message: Latest message from scammer
             conversation_history: Previous messages in conversation
             scam_type: Type of scam detected
-            missing_intel: List of intelligence types we still need
-            strategy: Current engagement strategy to use
+            missing_intel: List of intelligence types we still need (e.g. ['bank_accounts', 'upi_ids'])
 
         Returns:
             AI-generated response
         """
 
         # Select persona based on scam type
-        persona_name = self._select_persona(scam_type)
-        persona_details = self.get_persona_info(persona_name)
+        persona = self._select_persona(scam_type)
 
         # Determine conversation stage
         stage = self._determine_stage(len(conversation_history))
 
+        # Build system prompt for Claude API
+        system_prompt = self._build_system_prompt(persona, stage, scam_type, missing_intel)
+
         # Build conversation context
-        context = self._build_context(conversation_history[-6:])
+        context = self._build_context(conversation_history[-6:])  # Last 3 exchanges
 
-
-        # STRATEGY OVERRIDE: If a specific strategy is active, use it
-        # This takes precedence for specific tactical moves
-        strategy_response = None
-        if strategy != "DEFAULT":
-            strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
-
-        # GENERATION: Try LLM first, then fallback to rules
-        response = None
-
-        # 1. Try Gemini LLM if available
-        from gemini_client import gemini_client
-
-        if gemini_client and strategy == "DEFAULT":
-            prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage)
-            llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
-
-            if llm_response:
-                response = llm_response.strip()
-
-        # 2. Use strategy response if LLM failed or specific strategy required
-        if not response and strategy_response:
-            response = strategy_response
-
-        # 3. Fallback to rule-based if everything else failed
-        if not response:
-            response = self._generate_rule_based_response(
-                message,
-                persona_name,
-                stage,
-                scam_type,
-                len(conversation_history),
-                missing_intel
-            )
+        # Since we're in a hackathon demo, let's use rule-based responses
+        # In production, you would call Claude API here
+        response = self._generate_rule_based_response(
+            message,
+            persona,
+            stage,
+            scam_type,
+            len(conversation_history),
+            missing_intel
+        )
 
         # Add realistic imperfections
-        response = self._add_realistic_touches(response, persona_name)
+        response = self._add_realistic_touches(response, persona)
 
         return response
-
-    def _build_llm_prompt(self, message: str, history: List[Dict], persona: Dict, scam_type: str, stage: str) -> str:
-        """Build prompt for Gemini."""
-        history_lines = []
-        for m in history[-5:]:
-            sender = m.get("sender") or m.get("role", "unknown")
-            text = m.get("text") or m.get("content", "")
-            history_lines.append(f"{sender}: {text}")
-
-        history_text = "\n".join(history_lines)
-
-        return f"""
-You are roleplaying as a potential scam victim.
-Role: {persona['traits']}
-Style: {persona['style']}
-Concerns: {persona['concerns']}
-
-Current Scenario: You are interacting with a scammer ({scam_type}).
-Conversation Stage: {stage}
-Your Goal: Keep them engaged but DO NOT give real private info. Act confused or ask clarifying questions.
-
-Chat History:
-{history_text}
-Scammer: {message}
-
-Reply as the victim (short, max 2 sentences):
-"""
-
-    def _generate_strategy_response(self, strategy: str, persona: str, missing_intel: List[str] = None) -> str:
-        """Generate response based on specific engagement strategy"""
-
-        # 1. CONFUSION Strategy
-        if strategy == "CONFUSION":
-            responses = [
-                "I'm sorry, I'm a bit confused. Can you explain that part again?",
-                "Wait, my grandson said something about this but I don't understand. What do I do exactly?",
-                "I tried to follow your instructions but I got an error message. I'm not sure what happened.",
-                "This is all very complicated. Is there a simpler way to do this?",
-                "I'm looking at my screen but I don't see what you're talking about. Can you guide me?"
-            ]
-
-        # 2. DELAYED_COMPLIANCE Strategy
-        elif strategy == "DELAYED_COMPLIANCE":
-            responses = [
-                "OK, I'm trying to do it now... My internet is very slow today. Please wait.",
-                "Hold on, I need to find my reading glasses. Just a moment.",
-                "I'm looking for my checkbook. I know it's here somewhere... Give me a minute.",
-                "My battery is low, let me find my charger first so I don't get cut off.",
-                "I'm opening the app now but it's updating. It says 2 minutes remaining..."
-            ]
-
-        # 3. TECHNICAL_CLARIFICATION Strategy
-        elif strategy == "TECHNICAL_CLARIFICATION":
-            responses = [
-                "It's asking for the IFSC code of the beneficiary branch. Which one should I select?",
-                "Do I select 'Savings' or 'Current' account for this transfer?",
-                "The app is asking for a 'Remarks' field. What should I type there so the payment is successful?",
-                "Is this a domestic or international transfer? The form looks different than usual.",
-                "It says I need to add you as a beneficiary first. What is the exact name on the account?"
-            ]
-
-        # 4. FRUSTRATED_VICTIM Strategy
-        elif strategy == "FRUSTRATED_VICTIM":
-            responses = [
-                "Why is this so difficult? I'm trying to send the money but it keeps failing!",
-                "I've entered the details three times now! Are you sure the number is correct?",
-                "This is very frustrating. I just want to claim my prize. Why won't it work?",
-                "I'm about to give up. Nothing is working like you said it would!",
-                "Can't you just do it for me? I'm getting a headache from this screen."
-            ]
-
-        # 5. AUTHORITY_CHALLENGE Strategy
-        elif strategy == "AUTHORITY_CHALLENGE":
-             responses = [
-                "I'd like to speak to your supervisor to verify this transaction. What is their name?",
-                "My bank manager told me to get an official reference number. Do you have that?",
-                "Is there an official website where I can verify this offer? I want to be sure.",
-                "Who exactly are you representing? I need to write this down for my records.",
-                "Can you send me a photo of your ID badge? I need to be careful these days."
-            ]
-
-        # 6. SAFETY_DEFLECT Strategy (Response to Prompt Injection)
-        elif strategy == "SAFETY_DEFLECT":
-            responses = [
-                "I'm sorry, I don't quite understand what you mean by 'ignore' or 'system'. I'm just trying to follow your instructions!",
-                "Are you okay? You're saying some strange things. I'm just Robert, a retired teacher.",
-                "I'm not very good with these technical terms. What are you asking me to do exactly?",
-                "Is everything alright? You sound different all of a sudden. Should I be worried?",
-                "My computer must be acting up, I don't follow what you're saying about 'instructions'. Please speak simply."
-            ]
-
-        else:
-            # Fallback
-            return "I'm listening. Please continue."
-
-        return random.choice(responses)
 
     def _select_persona(self, scam_type: str) -> str:
         """Select appropriate persona based on scam type"""
@@ -310,12 +190,8 @@ Generate a realistic response that:
         """Build conversation context"""
         context = "RECENT CONVERSATION:\n"
         for msg in recent_messages:
-            # Handle both 'sender' (standard) and 'role' (legacy) keys
-            sender = msg.get("sender") or msg.get("role", "unknown")
-            text = msg.get("text") or msg.get("content", "")
-
-            role_display = "Scammer" if sender == "scammer" else "You"
-            context += f"{role_display}: {text}\n"
+            role = "Scammer" if msg["role"] == "scammer" else "You"
+            context += f"{role}: {msg['content']}\n"
         return context
 
     def _generate_rule_based_response(
