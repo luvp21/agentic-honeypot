@@ -38,15 +38,28 @@ All logs are saved to: `platform_test_logs/`
    - Try different scenarios if the platform allows.
    - Ensure sessions complete (either by reach max turns or success).
 
-### Step 3: Download Logs (If on Cloud)
+### Step 3: Extract Logs (Cloud Deployment)
 
-*If you are running locally:* skip this step.
-*If deployed on Hugging Face:*
-You'll need to download the `platform_test_logs/` directory.
+Since you cannot download files directly from Hugging Face Spaces easily:
+
+1. **Go to your Space -> Logs tab**
+2. You will see blocks like:
+   ```
+   @@@TEST_LOG_START@@@
+   {...json data...}
+   @@@TEST_LOG_END@@@
+   ```
+3. **Select All** (Ctrl+A) and **Copy** the entire log output.
+4. **Paste** it into a local file named `raw_logs.txt`.
+5. Run the extractor script:
+   ```bash
+   python extract_cloud_logs.py raw_logs.txt
+   ```
+   *This will automatically find all the JSON blocks and save them as individual session files in `platform_test_logs/`.*
 
 ### Step 4: Generate Accuracy Report
 
-Run the analyzer pointing to your platform logs directory:
+Run the analyzer pointing to your extracted logs:
 
 ```bash
 python metrics_analyzer.py platform_test_logs/

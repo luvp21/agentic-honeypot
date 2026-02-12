@@ -60,11 +60,21 @@ class TestDataLogger:
         self._save_session_log(session_id)
 
     def _save_session_log(self, session_id: str):
-        """Save session log to file"""
+        """Save session log to file AND print to stdout for cloud persistence"""
         if session_id in self.current_session_logs:
+            # 1. Save to local file (ephemeral in cloud, persistent if local)
             log_file = self.log_dir / f"{session_id}.json"
-            with open(log_file, 'w') as f:
-                json.dump(self.current_session_logs[session_id], indent=2, fp=f)
+            try:
+                with open(log_file, 'w') as f:
+                    json.dump(self.current_session_logs[session_id], indent=2, fp=f)
+            except Exception as e:
+                pass # Ignore file write errors in read-only environments
+
+            # 2. Print to stdout with delimiters for easy extraction from HF Logs
+            # Only print on completion or major updates to avoid log spam
+            if "total_exchanges" in self.current_session_logs[session_id]:
+                log_data = json.dumps(self.current_session_logs[session_id])
+                print(f"\n@@@TEST_LOG_START@@@\n{log_data}\n@@@TEST_LOG_END@@@\n", flush=True)
 
     def finalize_session(self, session_id: str, callback_data: Dict[str, Any] = None):
         """Mark session as complete and log final callback data"""
