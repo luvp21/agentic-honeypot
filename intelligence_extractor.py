@@ -143,9 +143,16 @@ class IntelligenceExtractor:
             value = match.group(0) # Keep format or normalize?
             # Negative Context
             start, end = match.span()
-            nearby_text = text[max(0, start-20):min(len(text), end+20)].lower()
-            if any(w in nearby_text for w in ["account", "a/c", "ifsc", "upi"]):
-                continue # Reject if mislabeled as account
+            nearby_text = text[max(0, start-30):min(len(text), end+30)].lower()
+
+            # Check for positive phone context
+            has_phone_context = any(w in nearby_text for w in ["phone", "mobile", "whatsapp", "call", "contact", "tel"])
+
+            # If it has explicit phone context OR starts with +91, be more lenient
+            is_explicit = value.startswith("+91") or has_phone_context
+
+            if not is_explicit and any(w in nearby_text for w in ["account", "a/c", "ifsc", "upi"]):
+                continue # Reject only if NO phone context and HAS account context
 
             extracted.append(RawIntel(
                 type="phone_numbers",
