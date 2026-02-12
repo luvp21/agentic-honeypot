@@ -22,7 +22,7 @@ else:
 
 class GeminiClient:
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
+        self.model = genai.GenerativeModel("models/gemini-flash-latest")
 
     async def generate_response(self, prompt: str, operation_name: str = "generator") -> Optional[str]:
         """
@@ -51,7 +51,7 @@ class GeminiClient:
             # Use safe_llm_call for timeout and circuit breaker protection
             result = await safe_llm_call(
                 _call_gemini,
-                timeout=2.0 if operation_name == "generator" else 1.0,
+                timeout=3.0 if operation_name == "generator" else 2.0,
                 fallback_value=None,
                 operation_name=operation_name
             )

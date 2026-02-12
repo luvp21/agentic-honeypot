@@ -90,7 +90,8 @@ class AIHoneypotAgent:
         """
 
         # Select persona based on scam type
-        persona = self._select_persona(scam_type)
+        persona_name = self._select_persona(scam_type)
+        persona_details = self.get_persona_info(persona_name)
 
         # Determine conversation stage
         stage = self._determine_stage(len(conversation_history))
@@ -103,7 +104,7 @@ class AIHoneypotAgent:
         # This takes precedence for specific tactical moves
         strategy_response = None
         if strategy != "DEFAULT":
-            strategy_response = self._generate_strategy_response(strategy, persona, missing_intel)
+            strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
 
         # GENERATION: Try LLM first, then fallback to rules
         response = None
@@ -112,7 +113,7 @@ class AIHoneypotAgent:
         from gemini_client import gemini_client
 
         if gemini_client and strategy == "DEFAULT":
-            prompt = self._build_llm_prompt(message, conversation_history, persona, scam_type, stage)
+            prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage)
             llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
 
             if llm_response:
@@ -126,7 +127,7 @@ class AIHoneypotAgent:
         if not response:
             response = self._generate_rule_based_response(
                 message,
-                persona,
+                persona_name,
                 stage,
                 scam_type,
                 len(conversation_history),
@@ -134,7 +135,7 @@ class AIHoneypotAgent:
             )
 
         # Add realistic imperfections
-        response = self._add_realistic_touches(response, persona)
+        response = self._add_realistic_touches(response, persona_name)
 
         return response
 
@@ -303,8 +304,12 @@ Generate a realistic response that:
         """Build conversation context"""
         context = "RECENT CONVERSATION:\n"
         for msg in recent_messages:
-            role = "Scammer" if msg["role"] == "scammer" else "You"
-            context += f"{role}: {msg['content']}\n"
+            # Handle both 'sender' (standard) and 'role' (legacy) keys
+            sender = msg.get("sender") or msg.get("role", "unknown")
+            text = msg.get("text") or msg.get("content", "")
+
+            role_display = "Scammer" if sender == "scammer" else "You"
+            context += f"{role_display}: {text}\n"
         return context
 
     def _generate_rule_based_response(
