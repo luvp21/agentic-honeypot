@@ -5,7 +5,7 @@ Manages session state using sessionId as primary key with explicit state machine
 
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta
-from models import SessionState, IntelItem, SessionStateEnum, MessageContent, ScammerProfile
+from models import SessionState, IntelItem, SessionStateEnum, MessageContent, ScammerProfile, EngagementStrategyEnum
 from behavioral_profiler import BehavioralProfiler
 import logging
 
@@ -149,10 +149,12 @@ class SessionManager:
         """
         Check if session should be finalized based on thresholds.
 
-        Finalization criteria:
-        1. Max turns reached (15+)
-        2. Idle timeout exceeded (60s)
-        3. Already in FINALIZED state
+        PRODUCTION REFINEMENTS - Less Rigid Termination:
+        A) No new intel for 3 turns AND totalTurns >= 8
+        B) Hard limit at 15 turns
+        C) Extracted unique intelligence types >= 3 AND totalTurns >= 8 (ELITE FIX: balanced)
+        D) Idle timeout exceeded (60s)
+        E) Already in FINALIZED state
 
         Args:
             session_id: Session to check
@@ -170,18 +172,36 @@ class SessionManager:
         if not session.is_scam:
             return False
 
-        # Check max turns
+        # Criterion B: Hard limit at 15 turns
         if session.message_count >= self.MAX_TURNS_THRESHOLD:
             logger.info(
                 f"Session {session_id} reached max turns: {session.message_count}"
             )
             return True
 
-        # Check idle timeout
+        # Criterion D: Idle timeout
         idle_time = datetime.utcnow() - session.last_activity_time
         if idle_time.total_seconds() >= self.IDLE_TIMEOUT_SECONDS:
             logger.info(
                 f"Session {session_id} exceeded idle timeout: {idle_time.total_seconds()}s"
+            )
+            return True
+
+        # Criterion C: ELITE FIX - Balance richness AND duration
+        # Extracted unique intelligence types >= 3 AND totalTurns >= 8
+        unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
+        if unique_intel_types >= 3 and session.message_count >= 8:
+            logger.info(
+                f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (sufficient)"
+            )
+            return True
+
+        # Criterion A: No new intel for 3 turns AND turns >= 8
+        turns_since_new_intel = session.message_count - session.last_new_intel_turn
+        if turns_since_new_intel >= 3 and session.message_count >= 8:
+            logger.info(
+                f"Intelligent termination for {session_id}: "
+                f"no new intel for {turns_since_new_intel} turns, total={session.message_count}"
             )
             return True
 
@@ -211,6 +231,54 @@ class SessionManager:
         )
 
         session.last_updated = datetime.utcnow()
+
+    def update_strategy(self, session_id: str, is_prompt_injection: bool = False) -> str:
+        """
+        PRODUCTION REFINEMENT: Strategy Escalation Engine
+
+        Escalation ladder: CONFUSION → TECHNICAL_CLARIFICATION → FRUSTRATED_VICTIM → AUTHORITY_CHALLENGE
+        Escalate after 2 turns of stalled extraction.
+
+        Logic:
+        - Prompt Injection → SAFETY_DEFLECT (protect persona)
+        - Otherwise: Use escalation ladder based on session.strategy_level
+        - Escalate when extraction stalls for 2+ turns
+        """
+        session = self.get_or_create_session(session_id)
+        profile = session.scammer_profile
+
+        # 0. Prompt Injection Check (Top Priority)
+        if is_prompt_injection:
+            session.engagement_strategy = EngagementStrategyEnum.SAFETY_DEFLECT
+            return "SAFETY_DEFLECT"
+
+        # Check for extraction stall (2+ turns without new intel)
+        # ELITE FIX: Don't escalate before turn 4 to maintain natural tone
+        turns_since_new_intel = session.message_count - session.last_new_intel_turn
+        if turns_since_new_intel >= 2 and session.message_count >= 4:
+            # Escalate strategy level
+            session.strategy_level = min(session.strategy_level + 1, 3)
+            logger.info(
+                f"Strategy escalated to level {session.strategy_level} "
+                f"(stalled for {turns_since_new_intel} turns)"
+            )
+
+        # Define escalation ladder
+        escalation_ladder = [
+            "CONFUSION",                  # Level 0: Basic stalling
+            "TECHNICAL_CLARIFICATION",    # Level 1: Fish for details
+            "FRUSTRATED_VICTIM",          # Level 2: Pressure reversal
+            "AUTHORITY_CHALLENGE"         # Level 3: Demand verification
+        ]
+
+        # Select strategy from ladder
+        new_strategy = escalation_ladder[session.strategy_level]
+
+        # Update session
+        if new_strategy in EngagementStrategyEnum.__members__:
+            session.engagement_strategy = EngagementStrategyEnum(new_strategy)
+
+        return session.engagement_strategy
 
     def store_full_message(
         self,
@@ -242,12 +310,14 @@ class SessionManager:
     def update_intel_graph(self, session_id: str, new_intel_list: list) -> None:
         """
         Update session's intelligence graph with new extraction results.
+        PRODUCTION REFINEMENT: Track last_new_intel_turn for termination logic.
 
         Args:
             session_id: Session identifier
             new_intel_list: List of RawIntel objects from extractor
         """
         session = self.get_or_create_session(session_id)
+        new_intel_added = False
 
         for raw_item in new_intel_list:
             # Normalized value for deduplication (remove spaces, lowercase)
@@ -286,6 +356,7 @@ class SessionManager:
 
             if not match_found:
                 # Create new IntelItem
+                new_intel_added = True
                 # Base confidence depends on source/validation
                 confidence = 1.0  # Default base for valid extraction
 
@@ -307,6 +378,14 @@ class SessionManager:
                 if raw_item.type not in session.intel_graph:
                     session.intel_graph[raw_item.type] = []
                 session.intel_graph[raw_item.type].append(new_item)
+
+        # PRODUCTION REFINEMENT: Update last_new_intel_turn
+        if new_intel_added:
+            session.intel_stall_counter = 0
+            session.last_new_intel_turn = session.message_count
+            logger.info(
+                f"New intel extracted for {session_id} at turn {session.message_count}"
+            )
 
         # Update backward compatibility dict
         self._sync_backward_compat(session)

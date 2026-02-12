@@ -25,6 +25,19 @@ class SessionStateEnum(str, Enum):
     FINALIZED = "FINALIZED"
 
 
+class EngagementStrategyEnum(str, Enum):
+    """
+    Agent engagement strategies to maximize duration and intelligence extraction.
+    """
+    DEFAULT = "DEFAULT"
+    CONFUSION = "CONFUSION"             # Act confused, force repetition
+    DELAYED_COMPLIANCE = "DELAYED_COMPLIANCE"  # "I'm trying, wait..."
+    TECHNICAL_CLARIFICATION = "TECHNICAL_CLARIFICATION" # Ask for specific details
+    FRUSTRATED_VICTIM = "FRUSTRATED_VICTIM"   # "Why is this not working?"
+    AUTHORITY_CHALLENGE = "AUTHORITY_CHALLENGE" # "Who is your supervisor?"
+    SAFETY_DEFLECT = "SAFETY_DEFLECT"         # Respond to prompt injection/challenge
+
+
 class ScammerProfile(BaseModel):
     """
     Behavioral profiling of scammer for intelligence analysis.
@@ -115,6 +128,9 @@ class ExtractedIntelligence(BaseModel):
     phishingLinks: List[str] = Field(default_factory=list, description="Phishing URLs")
     phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
     suspiciousKeywords: List[str] = Field(default_factory=list, description="Scam indicators")
+    telegramIds: List[str] = Field(default_factory=list, description="Extracted Telegram Usernames")
+    qrMentions: List[str] = Field(default_factory=list, description="References to QR codes")
+    shortUrls: List[str] = Field(default_factory=list, description="Shortened URLs")
 
 
 class FinalCallbackPayload(BaseModel):
@@ -159,6 +175,17 @@ class SessionState(BaseModel):
 
     # State Machine (NEW)
     state: SessionStateEnum = SessionStateEnum.INIT
+
+    # Strategy & Persona (NEW - UPGRADE)
+    engagement_strategy: EngagementStrategyEnum = EngagementStrategyEnum.DEFAULT
+    persona_type: str = "default"
+    last_scammer_move: Optional[str] = None # URGENCY, THREAT, etc.
+    intel_stall_counter: int = 0             # Turns since last unique intel extraction
+
+    # PRODUCTION REFINEMENTS
+    suspicion_score: float = 0.0             # Incremental scam confidence accumulation
+    strategy_level: int = 0                  # Strategy escalation ladder (0-3)
+    last_new_intel_turn: int = 0             # Track when last NEW intel was found
 
     # Behavioral Profiling (NEW)
     scammer_profile: ScammerProfile = Field(default_factory=ScammerProfile)

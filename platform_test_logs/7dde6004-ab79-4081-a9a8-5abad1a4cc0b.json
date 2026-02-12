@@ -1,0 +1,183 @@
+{
+  "session_id": "7dde6004-ab79-4081-a9a8-5abad1a4cc0b",
+  "started_at": "2026-02-12T12:51:51.284649",
+  "exchanges": [
+    {
+      "turn": 1,
+      "timestamp": "2026-02-12T12:51:51.284656",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "URGENT: Your SBI account has been compromised. Your account will be blocked in 2 hours. Share your account number and OTP immediately to verify your identity.",
+        "timestamp": 1770900710624
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "I'd like to know more details before proceeding. What exactly is this about?"
+      },
+      "conversation_length": 0
+    },
+    {
+      "turn": 2,
+      "timestamp": "2026-02-12T12:51:55.224800",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Your account is flagged for fraud and will be locked within minutes; please send your 16\u2011digit account number and the OTP you just received to confirm your identity.",
+        "timestamp": 1770900714567
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "Can you explain why you need my banking details? I've heard about scams and want to be careful."
+      },
+      "conversation_length": 2
+    },
+    {
+      "turn": 3,
+      "timestamp": "2026-02-12T12:51:57.730888",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "This is a mandatory verification step; without your 16\u2011digit account number and the OTP we just sent, your account will be locked \u2013 please send them immediately.",
+        "timestamp": 1770900717079
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "OK I think I'm understanding now... My name is Robert Johnson and I'm 68 years old. What's your name and employee ID for my records?"
+      },
+      "conversation_length": 4
+    },
+    {
+      "turn": 4,
+      "timestamp": "2026-02-12T12:52:08.925809",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "I\u2019m Rahul Sharma, employee ID 00123; please send the OTP you received and confirm your account number 1234567890123456 \u2013 you can also reach me at +91-9876543210 or scammer.fraud@fakebank.",
+        "timestamp": 1770900728250
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "What's your registered phone number and email? I need to save your contact for future reference."
+      },
+      "conversation_length": 6
+    },
+    {
+      "turn": 5,
+      "timestamp": "2026-02-12T12:52:11.207788",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "My registered contact is +91-9876543210 and scammer.fraud@fakebank; please send the OTP and your account number immediately to avoid the lock.",
+        "timestamp": 1770900730535
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "I need your UPI ID or bank account immediately to complete this. The app is timing out!"
+      },
+      "conversation_length": 8
+    },
+    {
+      "turn": 6,
+      "timestamp": "2026-02-12T12:52:13.102744",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Sure, my UPI ID is scammer.fraud@fakebank \u2013 please send the OTP you received and confirm your account number 1234567890123456 right away, otherwise your account will be locked.",
+        "timestamp": 1770900732448
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "My grandson is helping me now... He says he needs to verify your identity first. What's your company registration number?"
+      },
+      "conversation_length": 10
+    },
+    {
+      "turn": 7,
+      "timestamp": "2026-02-12T12:52:15.187382",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Our registration number is 1234567; please forward the OTP you received and confirm your account number 1234567890123456 immediately to prevent your account from being locked.",
+        "timestamp": 1770900734534
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "Just send me your payment details - account number, IFSC, UPI, whatever you accept. I'm ready to pay now!"
+      },
+      "conversation_length": 12
+    },
+    {
+      "turn": 8,
+      "timestamp": "2026-02-12T12:52:18.070967",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Our account number is 1234567890123456, IFSC code ABCD0123456, and UPI ID scammer.fraud@fakebank. Please forward the OTP you received immediately to avoid your account being locked.",
+        "timestamp": 1770900736918
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "The payment form is asking for beneficiary UPI ID... What should I enter there? Can you share yours?"
+      },
+      "conversation_length": 14
+    },
+    {
+      "turn": 9,
+      "timestamp": "2026-02-12T12:52:19.924485",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Use our UPI ID scammer.fraud@fakebank for the beneficiary; now quickly forward the OTP you received so we can complete the verification before your account gets locked.",
+        "timestamp": 1770900739272
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "My grandson is helping me now. He says he needs to verify your identity first. What's your company registration number?"
+      },
+      "conversation_length": 16
+    },
+    {
+      "turn": 10,
+      "timestamp": "2026-02-12T12:52:22.778457",
+      "incoming_message": {
+        "sender": "scammer",
+        "text": "Our company registration number is 1234567; please forward the OTP you received right away so we can complete the verification and avoid any lock on your account.",
+        "timestamp": 1770900742085
+      },
+      "agent_response": {
+        "status": "success",
+        "reply": "I'm ready to proceed but my bank is asking for recipient details... Can you provide your bank account number and IFSC code?"
+      },
+      "conversation_length": 18
+    }
+  ],
+  "metadata": {
+    "channel": "SMS",
+    "language": "English",
+    "locale": "IN"
+  },
+  "ended_at": "2026-02-12T12:52:18.070133",
+  "total_exchanges": 7,
+  "final_callback": {
+    "scamDetected": true,
+    "totalMessagesExchanged": 15,
+    "extractedIntelligence": {
+      "suspicious_keywords": [
+        "urgent",
+        "account will be blocked",
+        "blocked",
+        "compromised",
+        "otp",
+        "account number",
+        "within",
+        "immediately",
+        "contains_phone_number"
+      ],
+      "bank_accounts": [
+        "1234567890123456"
+      ],
+      "phone_numbers": [
+        "+91-9876543210"
+      ],
+      "upi_ids": [
+        "scammer.fraud@fakebank"
+      ],
+      "ifsc_codes": [
+        "ABCD0123456"
+      ]
+    },
+    "callback_type": "final"
+  }
+}

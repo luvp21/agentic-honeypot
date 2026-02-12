@@ -200,6 +200,42 @@ class IntelligenceExtractor:
                             message_index=message_index
                         ))
 
+        # 2.6 Telegram IDs (Context + Strict)
+        # Regex: @username or t.me/username
+        telegram_pattern = r'(?:@|t\.me\/)([a-zA-Z0-9_]{5,32})'
+        for match in re.finditer(telegram_pattern, text):
+            extracted.append(RawIntel(
+                type="telegram_ids",
+                value=match.group(1),
+                source="strict",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
+
+        # 2.7 QR Code Mentions (Context Keyword)
+        # Regex: scan qr, send qr, qr code
+        qr_pattern = r'(?i)\b(?:scan|send|share)\s*(?:the\s*)?qr\s*(?:code)?\b'
+        for match in re.finditer(qr_pattern, text):
+            extracted.append(RawIntel(
+                type="qr_mentions",
+                value=match.group(0),
+                source="context",
+                confidence_delta=0.8,
+                message_index=message_index
+            ))
+
+        # 2.8 Short URLs (Strict)
+        # Regex: bit.ly, tinyurl.com, goo.gl, etc.
+        short_url_pattern = r'(?i)\b(?:bit\.ly|tinyurl\.com|goo\.gl|t\.co|is\.gd|buff\.ly|ow\.ly)\/[a-zA-Z0-9]+'
+        for match in re.finditer(short_url_pattern, text):
+            extracted.append(RawIntel(
+                type="short_urls",
+                value=match.group(0),
+                source="strict",
+                confidence_delta=1.0,
+                message_index=message_index
+            ))
+
         return extracted
 
     def extract_from_full_history(
@@ -245,6 +281,8 @@ class IntelligenceExtractor:
 
         return extracted
 
+        return value.strip().lower()
+
     def normalize_value(self, value: str, intel_type: str) -> str:
         """
         Normalize values for better deduplication.
@@ -273,11 +311,15 @@ class IntelligenceExtractor:
             return value.lower().strip()
 
         # URLs: lowercase
-        if intel_type == "phishing_links":
+        if intel_type in ["phishing_links", "short_urls"]:
             return value.lower().strip()
 
-        # Keywords: lowercase
-        if intel_type == "suspicious_keywords":
+        # Telegram: remove @, lowercase
+        if intel_type == "telegram_ids":
+            return value.lstrip("@").lower().strip()
+
+        # QR and Keywords: lowercase
+        if intel_type in ["suspicious_keywords", "qr_mentions"]:
             return value.lower().strip()
 
         # Default: trim and lowercase

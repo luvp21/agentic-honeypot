@@ -28,6 +28,8 @@ from ai_agent import AIHoneypotAgent
 from intelligence_extractor import IntelligenceExtractor
 from callback import send_callback_with_retry
 from test_logger import test_logger  # NEW: Platform test logging
+from guardrails import guardrails  # PRODUCTION REFINEMENT
+from llm_safety import is_llm_available  # PRODUCTION REFINEMENT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -151,19 +153,51 @@ async def process_message(
         )
 
         # ====================================================================
-        # STEP 2: Scam Detection + State Transition
+        # STEP 2: PRODUCTION - Incremental Scam Detection + Suspicion Accumulation
         # ====================================================================
 
         scam_result = scam_detector.analyze(current_message.text)
 
-        # State transition: INIT → SCAM_DETECTED
-        if not session.is_scam and scam_result["is_scam"]:
-            # First scam detection in this session
+        # PRODUCTION REFINEMENT: Accumulate suspicion score
+        # ELITE FIX: Only accumulate if scam not yet confirmed, and cap at 2.0
+        if current_message.sender == "scammer" and not session.is_scam:
+            # Add rule score * 0.4 to session suspicion
+            session.suspicion_score += scam_result.get("normalized_score", 0.0) * 0.4
+
+            # Additional suspicion signals
+            if scam_result.get("has_urgency"):
+                session.suspicion_score += 0.2
+            if scam_result.get("has_payment_terms"):
+                session.suspicion_score += 0.2
+
+            # Check for repeated credential requests
+            message_text_lower = current_message.text.lower()
+            repeated_requests = sum([
+                "otp" in message_text_lower,
+                "account" in message_text_lower and "number" in message_text_lower,
+                "upi" in message_text_lower,
+                "verify" in message_text_lower
+            ])
+            if repeated_requests >= 2:
+                session.suspicion_score += 0.3
+
+            # ELITE FIX: Cap suspicion score to prevent overflow
+            session.suspicion_score = min(session.suspicion_score, 2.0)
+
+            logger.info(
+                f"Session {session_id} suspicion score: {session.suspicion_score:.2f}"
+            )
+
+        # Trigger scam detection via suspicion score OR rule-based
+        if not session.is_scam and (scam_result["is_scam"] or session.suspicion_score > 1.2):
+            # Scam confirmed!
+            detection_method = "rule-based" if scam_result["is_scam"] else "incremental suspicion"
+
             session_manager.update_session(
                 session_id,
                 is_scam=True,
                 scam_type=scam_result.get("scam_type", "unknown"),
-                confidence_score=scam_result.get("confidence_score", 0.0)
+                confidence_score=max(scam_result.get("confidence_score", 0.0), session.suspicion_score / 2)
             )
 
             # Transition to SCAM_DETECTED state
@@ -177,9 +211,10 @@ async def process_message(
             )
 
             logger.info(
-                f"🚨 SCAM DETECTED for {session_id}: "
+                f"🚨 SCAM DETECTED for {session_id} via {detection_method}: "
                 f"type={scam_result.get('scam_type')}, "
-                f"confidence={scam_result.get('confidence_score')}"
+                f"confidence={session.confidence_score:.2f}, "
+                f"suspicion={session.suspicion_score:.2f}"
             )
         elif session.is_scam:
             # Update behavioral profile on each scammer message
@@ -262,9 +297,25 @@ async def process_message(
         # ====================================================================
 
         if session.is_scam:
+            # Update Engagement Strategy
+            current_strategy = session_manager.update_strategy(
+                session_id,
+                is_prompt_injection=scam_result.get("is_prompt_injection", False)
+            )
+            logger.info(f"Using strategy {current_strategy} for {session_id}")
+
             # Determine missing intelligence to guide agent
             missing_intel = []
             features = session.extracted_intelligence
+
+            # Check if we have enough intel to terminate early (Success Condition)
+            # If we have Bank OR UPI AND Phone, we can consider wrapping up
+            has_payment = bool(features.get("bank_accounts") or features.get("upi_ids"))
+            has_contact = bool(features.get("phone_numbers"))
+
+            if has_payment and has_contact and total_messages > 8:
+                 logger.info(f"Target intelligence acquired for {session_id}. Initiating wrap-up.")
+                 # Could force a specific "wrap up" strategy or just let natural flow handle it
 
             if not features.get("bank_accounts"):
                 missing_intel.append("bank_accounts")
@@ -281,29 +332,40 @@ async def process_message(
             agent_history = []
             for msg in conversation_history:
                 agent_history.append({
-                    "role": msg.sender,
+                    "role": "scammer" if msg.sender == "scammer" else "user", # map back to agent expected roles
                     "content": msg.text,
                     "timestamp": msg.timestamp
                 })
 
             # Add current message
             agent_history.append({
-                "role": current_message.sender,
+                "role": "scammer",
                 "content": current_message.text,
                 "timestamp": current_message.timestamp
             })
 
-            # Generate response
+            # Generate response with strategy
             agent_response = await ai_agent.generate_response(
                 message=current_message.text,
                 conversation_history=agent_history,
                 scam_type=session.scam_type,
-                missing_intel=missing_intel
+                missing_intel=missing_intel,
+                strategy=current_strategy
+            )
+
+            # PRODUCTION REFINEMENT: Validate and sanitize with guardrails
+            is_prompt_injection = scam_result.get("is_prompt_injection", False) or \
+                                  guardrails.detect_prompt_injection(current_message.text)
+
+            agent_response = guardrails.validate_and_fix(
+                agent_response,
+                is_prompt_injection=is_prompt_injection
             )
 
             logger.info(
                 f"🤖 Agent response for {session_id}: "
-                f"turn {total_messages}, phase: {session.state}, missing: {missing_intel}"
+                f"turn {total_messages}, phase: {session.state}, missing: {missing_intel}, "
+                f"llm_available: {is_llm_available()}"
             )
 
         else:

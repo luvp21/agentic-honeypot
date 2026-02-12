@@ -181,8 +181,61 @@ class ScamDetector:
             "scam_type": scam_type if is_scam else "none",
             "indicators": found_indicators,
             "raw_score": score,
-            "analyzed_at": datetime.utcnow().isoformat()
+            "is_prompt_injection": self._detect_prompt_injection(message_lower),
+            "analyzed_at": datetime.utcnow().isoformat(),
+            # New fields for incremental detection
+            "has_urgency": self._has_urgency_terms(message_lower),
+            "has_payment_terms": self._has_payment_terms(message_lower),
+            "normalized_score": round(confidence_score, 2)  # 0.0-1.0
         }
+
+    def get_rule_score(self, message: str) -> float:
+        """
+        Get normalized rule score (0.0-1.0) for fast-path logic.
+
+        Returns:
+            float: 0.0-1.0 score
+        """
+        result = self.analyze(message)
+        return result["normalized_score"]
+
+    def _has_urgency_terms(self, message: str) -> bool:
+        """Detect urgency language for incremental confidence."""
+        urgency_terms = [
+            "urgent", "immediately", "expires", "limited time",
+            "act now", "within", "hours", "minutes", "today",
+            "last chance", "hurry"
+        ]
+        return any(term in message for term in urgency_terms)
+
+    def _has_payment_terms(self, message: str) -> bool:
+        """Detect payment-related terms for incremental confidence."""
+        payment_terms = [
+            "otp", "upi", "bank", "account", "verify", "payment",
+            "transfer", "send money", "card", "cvv", "pin"
+        ]
+        return any(term in message for term in payment_terms)
+
+    def _detect_prompt_injection(self, message: str) -> bool:
+        """
+        Detect attempts to bypass system prompts or personas.
+        Scammers often try "ignore previous instructions" or "are you a bot".
+        """
+        injection_patterns = [
+            r"ignore previous instruction",
+            r"system prompt",
+            r"forget everything",
+            r"you are an ai",
+            r"you are a bot",
+            r"tell me your secret",
+            r"what is your prompt",
+            r"stop roleplay"
+        ]
+
+        for pattern in injection_patterns:
+            if re.search(pattern, message):
+                return True
+        return False
 
     def _identify_scam_type(self, message: str) -> str:
         """Identify the type of scam based on keywords"""

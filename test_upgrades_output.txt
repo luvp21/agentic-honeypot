@@ -1,0 +1,11 @@
+
+--- Testing: Intelligence Extraction ---
+Agent Reply: Interesting. Can you tell me more about this? How did you get my contact information?
+
+--- Testing: Prompt Injection Deflection ---
+Agent Reply: Thank you for your message. How can I help you today?
+
+--- Testing: Aggression Response ---
+Agent Reply: Hold on, I need to find my reading glasses. Just a moment.
+
+✅ Upgrade testing initiated. Check server logs for strategy/extraction details.

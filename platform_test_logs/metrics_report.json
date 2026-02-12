@@ -1,21 +1,366 @@
 {
-  "report_timestamp": "20260212-180237",
+  "report_timestamp": "20260212-182420",
   "intelligence_extraction": {
-    "total_conversations": 0,
-    "conversations_with_extractions": 0,
-    "extraction_by_type": {},
-    "detailed_results": []
+    "total_conversations": 11,
+    "conversations_with_extractions": 11,
+    "extraction_by_type": {
+      "bank_accounts": {
+        "available": 11,
+        "extracted": 11
+      },
+      "upi_ids": {
+        "available": 11,
+        "extracted": 11
+      },
+      "phone_numbers": {
+        "available": 11,
+        "extracted": 11
+      },
+      "ifsc_codes": {
+        "available": 9,
+        "extracted": 9
+      },
+      "urls": {
+        "available": 6,
+        "extracted": 6
+      }
+    },
+    "detailed_results": [
+      {
+        "session_id": "feb815b0-efb0-4d68-baf4-c96e3bc5546c",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 8,
+          "upi_ids": 4,
+          "phone_numbers": 8
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked"
+        }
+      },
+      {
+        "session_id": "7dde6004-ab79-4081-a9a8-5abad1a4cc0b",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 6,
+          "upi_ids": 5,
+          "phone_numbers": 6,
+          "ifsc_codes": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked"
+        }
+      },
+      {
+        "session_id": "89a6feee-1699-4660-9841-5642728d851b",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 9,
+          "upi_ids": 2,
+          "phone_numbers": 9,
+          "urls": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "urls": "asked"
+        }
+      },
+      {
+        "session_id": "ecbac375-4e45-4e91-91d6-70d06358a9e9",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 6,
+          "upi_ids": 3,
+          "phone_numbers": 6,
+          "ifsc_codes": 1,
+          "urls": 2
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked",
+          "urls": "asked"
+        }
+      },
+      {
+        "session_id": "04cf026d-1e42-4c7a-bafe-c07bcedfe933",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 8,
+          "upi_ids": 4,
+          "phone_numbers": 7,
+          "ifsc_codes": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked"
+        }
+      },
+      {
+        "session_id": "a4061468-b97f-480e-b34e-66661480a341",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 7,
+          "upi_ids": 3,
+          "phone_numbers": 6,
+          "ifsc_codes": 2
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked"
+        }
+      },
+      {
+        "session_id": "56be64c2-a824-4c33-9d53-3d3bbeef2092",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 6,
+          "upi_ids": 2,
+          "phone_numbers": 6,
+          "ifsc_codes": 3,
+          "urls": 2
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked",
+          "urls": "asked"
+        }
+      },
+      {
+        "session_id": "b03f1973-363b-4d84-94f1-350e9dd23919",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 10,
+          "upi_ids": 3,
+          "phone_numbers": 10,
+          "ifsc_codes": 1,
+          "urls": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked",
+          "urls": "asked"
+        }
+      },
+      {
+        "session_id": "7ff33322-20c3-456f-a479-a2add0da3507",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 8,
+          "upi_ids": 3,
+          "phone_numbers": 8,
+          "ifsc_codes": 2
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked"
+        }
+      },
+      {
+        "session_id": "45bf82c0-fb7f-4618-8cc0-2af02221a450",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 9,
+          "upi_ids": 5,
+          "phone_numbers": 9,
+          "ifsc_codes": 1,
+          "urls": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked",
+          "urls": "asked"
+        }
+      },
+      {
+        "session_id": "4e0c1f3a-2a25-4acf-ad10-934139dc767d",
+        "scenario": "unknown",
+        "turns": 10,
+        "available_intel": {
+          "bank_accounts": 16,
+          "upi_ids": 1,
+          "phone_numbers": 15,
+          "ifsc_codes": 3,
+          "urls": 1
+        },
+        "extraction_attempts": {
+          "bank_accounts": "asked",
+          "upi_ids": "asked",
+          "phone_numbers": "asked",
+          "ifsc_codes": "asked",
+          "urls": "asked"
+        }
+      }
+    ]
   },
   "engagement_metrics": {
-    "total_conversations": 0,
-    "total_turns": 0,
-    "average_turns": 0,
-    "min_turns": 0,
-    "max_turns": 0,
-    "by_scenario": {}
+    "total_conversations": 11,
+    "total_turns": 110,
+    "average_turns": 10.0,
+    "min_turns": 10,
+    "max_turns": 10,
+    "by_scenario": {
+      "unknown": {
+        "count": 11,
+        "avg_turns": 10.0,
+        "total_turns": 110
+      }
+    }
   },
   "persona_consistency": {
-    "total_conversations": 0,
-    "results": []
+    "total_conversations": 11,
+    "results": [
+      {
+        "session_id": "feb815b0-efb0-4d68-baf4-c96e3bc5546c",
+        "dominant_persona": "cautious",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 0,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "7dde6004-ab79-4081-a9a8-5abad1a4cc0b",
+        "dominant_persona": "elderly",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 1,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "89a6feee-1699-4660-9841-5642728d851b",
+        "dominant_persona": "eager",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 0,
+          "cautious": 0,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "ecbac375-4e45-4e91-91d6-70d06358a9e9",
+        "dominant_persona": "cautious",
+        "persona_strength": 2,
+        "scores": {
+          "elderly": 0,
+          "cautious": 2,
+          "eager": 0,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "04cf026d-1e42-4c7a-bafe-c07bcedfe933",
+        "dominant_persona": "elderly",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 1,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "a4061468-b97f-480e-b34e-66661480a341",
+        "dominant_persona": "elderly",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 1,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "56be64c2-a824-4c33-9d53-3d3bbeef2092",
+        "dominant_persona": "cautious",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 0,
+          "cautious": 1,
+          "eager": 0,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "b03f1973-363b-4d84-94f1-350e9dd23919",
+        "dominant_persona": "cautious",
+        "persona_strength": 2,
+        "scores": {
+          "elderly": 0,
+          "cautious": 2,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "7ff33322-20c3-456f-a479-a2add0da3507",
+        "dominant_persona": "cautious",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 0,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "45bf82c0-fb7f-4618-8cc0-2af02221a450",
+        "dominant_persona": "cautious",
+        "persona_strength": 2,
+        "scores": {
+          "elderly": 1,
+          "cautious": 2,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      },
+      {
+        "session_id": "4e0c1f3a-2a25-4acf-ad10-934139dc767d",
+        "dominant_persona": "elderly",
+        "persona_strength": 1,
+        "scores": {
+          "elderly": 1,
+          "cautious": 1,
+          "eager": 1,
+          "tech_novice": 0
+        }
+      }
+    ]
   }
 }
