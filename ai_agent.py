@@ -106,8 +106,24 @@ class AIHoneypotAgent:
         # STRATEGY OVERRIDE: If a specific strategy is active, use it
         # This takes precedence for specific tactical moves
         strategy_response = None
-        if strategy != "DEFAULT":
+
+        # ELITE FIX: Override strategy if CRITICAL INTEL is missing
+        # We want to force extraction (via LLM or Priority Rules) rather than just being "frustrated"
+        priority_missing = False
+        if missing_intel:
+            for p_type in ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]:
+                if p_type in missing_intel:
+                    priority_missing = True
+                    break
+
+        # Don't override safety checks
+        if strategy == "SAFETY_DEFLECT":
             strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
+        elif priority_missing and turn_number > 2:
+            # FORCE DEFAULT so LLM/Rules can handle extraction
+            strategy = "DEFAULT"
+        elif strategy != "DEFAULT":
+             strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
 
         # GENERATION: Try LLM first, then fallback to rules
         response = None
