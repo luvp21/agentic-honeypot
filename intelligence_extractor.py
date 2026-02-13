@@ -88,9 +88,9 @@ class IntelligenceExtractor:
             extracted.append(RawIntel("bank_accounts", value, "context", 1.0, message_index))
 
         # 2.2 IFSC Codes
-        ifsc_pattern = r'\b([A-Z]{4}0[A-Z0-9]{6})\b'
+        ifsc_pattern = r'(?i)\b([a-z]{4}0[a-z0-9]{6})\b'
         for match in re.finditer(ifsc_pattern, text):
-            value = match.group(1)
+            value = match.group(1).upper() # Normalize to uppercase
             has_context = bool(re.search(r'(?i)(account|bank|branch|ifsc)', text))
             if not has_context and context_window:
                  has_context = bool(re.search(r'(?i)(account|bank|branch|ifsc)', context_window[-200:]))
@@ -103,12 +103,10 @@ class IntelligenceExtractor:
             extracted.append(RawIntel("upi_ids", match.group(1), "strict", 1.0, message_index))
 
         # Generic UPI (fallback) - Must contain '@' and be surrounded by word boundaries
-        # Validation: 'upi' keyword in context OR strong pattern structure
         if "upi" in full_text.lower() or "pay" in full_text.lower():
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
                 val = match.group(1)
-                # Skip emails if possible (simple heuristic: upi ids usually don't have .com/org/net/in at end, but some do... relying on 'upi' context)
                 if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
                 extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
@@ -117,17 +115,11 @@ class IntelligenceExtractor:
         for match in re.finditer(phone_pattern, text):
             value = match.group(0)
 
-            # Legacy Context Check
             start, end = match.span()
             nearby_text = text[max(0, start-30):min(len(text), end+30)].lower()
-
-            # Check for positive phone context
             has_phone_context = any(w in nearby_text for w in ["phone", "mobile", "whatsapp", "call", "contact", "tel"])
-
-            # If it has explicit phone context OR starts with +91, be more lenient
             is_explicit = value.startswith("+91") or has_phone_context
 
-            # Negative Context: If NO phone context and HAS account context (likely an account number)
             if not is_explicit and any(w in nearby_text for w in ["account", "a/c", "ifsc", "upi"]):
                 continue
 
@@ -137,6 +129,32 @@ class IntelligenceExtractor:
         url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
         for match in re.finditer(url_pattern, text):
             extracted.append(RawIntel("phishing_links", match.group(1), "strict", 1.0, message_index))
+
+        # 2.6 Short URLs (bit.ly, tinyurl, etc.)
+        short_url_pattern = r'\b(?:https?://)?(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly|rebrand\.ly)/[a-zA-Z0-9\-_]{3,20}\b'
+        for match in re.finditer(short_url_pattern, text):
+            extracted.append(RawIntel("short_urls", match.group(), "strict", 1.0, message_index))
+
+        # 2.7 Telegram IDs (@username)
+        telegram_pattern = r'(?<!\w)@([a-zA-Z][a-zA-Z0-9_]{4,31})(?!\w)'
+        for match in re.finditer(telegram_pattern, text):
+            has_context = any(w in text_lower for w in ["telegram", "tg", "contact", "message", "chat"])
+            if has_context:
+                extracted.append(RawIntel("telegram_ids", match.group(1), "context", 1.0, message_index))
+
+        # 2.8 Holder Name & Branch (Advanced Context Extraction)
+        # Patterns for: "name is X", "holder: X", "branch is X"
+        holder_pattern = r'(?i)(?:account\s*name|holder|payee)(?:\s*(?:is|of|for|:|-))?\s*([a-z.\s]{2,30}?)(?=[,.]|$|\n)'
+        for match in re.finditer(holder_pattern, text):
+            name = match.group(1).strip()
+            if len(name) > 3:
+                extracted.append(RawIntel("suspicious_keywords", f"Holder: {name}", "context", 0.8, message_index))
+
+        branch_pattern = r'(?i)(?:branch|location)(?:\s*(?:is|of|for|:|-))?\s*([a-z.\s]{2,20}?)(?=[,.]|$|\n)'
+        for match in re.finditer(branch_pattern, text):
+            branch = match.group(1).strip()
+            if len(branch) > 2:
+                extracted.append(RawIntel("suspicious_keywords", f"Branch: {branch}", "context", 0.7, message_index))
 
         return extracted
 

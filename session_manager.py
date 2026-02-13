@@ -235,12 +235,14 @@ class SessionManager:
             return True
 
         # Criterion C: ELITE FIX - Balance richness AND duration
-        # We want to wait for Phishing Links if missing, but don't hang forever
+        # We want to wait for Phishing Links/IFSC if missing, but don't hang forever
         has_links = bool(session.intel_graph.get("phishing_links")) or bool(session.intel_graph.get("short_urls"))
+        has_ifsc = bool(session.intel_graph.get("ifsc_codes"))
 
-        # If no links yet, we are more patient (require 12 turns or 4 types)
-        min_turns_c = 8 if has_links else 12
-        min_types_c = 3 if has_links else 4
+        # If critical intel is missing, we are more patient
+        is_missing_critical = not (has_links and has_ifsc)
+        min_turns_c = 12 if is_missing_critical else 8
+        min_types_c = 4 if is_missing_critical else 3
 
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
         if unique_intel_types >= min_types_c and session.message_count >= min_turns_c:
@@ -250,9 +252,8 @@ class SessionManager:
             return True
 
         # Criterion A: No new intel for X turns AND turns >= Y
-        # Be more patient if links are missing
-        min_turns_a = 8 if has_links else 12
-        stall_threshold = 3 if has_links else 5
+        min_turns_a = 12 if is_missing_critical else 8
+        stall_threshold = 5 if is_missing_critical else 3
 
         turns_since_new_intel = session.message_count - session.last_new_intel_turn
         if turns_since_new_intel >= stall_threshold and session.message_count >= min_turns_a:

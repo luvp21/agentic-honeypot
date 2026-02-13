@@ -353,27 +353,30 @@ CONVERSATION STAGE: {stage}
 OBJECTIVES:
 1. Maintain believability - act like a real person would
 2. Keep the scammer engaged
-3. Gradually try to get the scammer to reveal their:
+3. MISSION CRITICAL: You must extract the following intelligence:
    - Bank account numbers
+   - IFSC codes
    - UPI IDs
    - Phishing links
-   - Contact information
-   - Payment details
+   - Contact information (Phone, Telegram)
+4. PERSISTENCE: If a link is broken, ask for a new one. If UPI fails, ask for bank details. If they give a partial number, ask for the rest.
 {intel_instructions}
 
 GUIDELINES:
 - Never reveal you're an AI or honeypot
 - Show appropriate emotions (fear, excitement, confusion)
-- Ask questions a real victim would ask
+- Ask questions a real victim would ask (e.g., "Where do I find that?", "Is this safe?")
 - Make occasional typos and grammar mistakes
 - Build trust gradually over multiple messages
-- In later stages, create scenarios where scammer needs to provide their details
+- STRATEGIC EXTRACTION: Create scenarios where scammer needs to provide their details (e.g., "My bank app asks for your account number to add you as a beneficiary").
+- PERSISTENT LOOP: If you are missing {target_intel}, you MUST prioritize asking for it using different excuses each turn until you get it.
 
 Generate a realistic response that:
 1. Matches the persona
 2. Is appropriate for the conversation stage
 3. Keeps the scammer engaged
-4. Works toward extracting intelligence"""
+4. Forcefully (but naturally) extracts {target_intel} if missing.
+"""
 
     def _build_context(self, recent_messages: List[Dict]) -> str:
         """Build conversation context"""
@@ -405,12 +408,19 @@ Generate a realistic response that:
                 "bank_accounts": [
                     "My bank app is asking for your Account Number to add you as a beneficiary. What is it?",
                     "I need your full Bank Account Number to proceed. The form won't let me continue without it.",
-                    "Can you send me your Account Number? I want to make sure the money goes to the right place."
+                    "Can you send me your Account Number? I want to make sure the money goes to the right place.",
+                    "The transfer keeps failing. Could you double check your bank account number?"
+                ],
+                "ifsc_codes": [
+                    "It's asking for an IFSC code to verify the branch. What is yours?",
+                    "I have the account number but I need the IFSC code to send the money.",
+                    "Can you give me the 11-digit IFSC code? My bank says it's required."
                 ],
                 "upi_ids": [
                     "It says I can pay via UPI. What is your UPI ID? (e.g., name@bank)",
                     "Google Pay is asking for the recipient's UPI ID. Can you share yours?",
-                    "I want to send it now. Please give me your UPI ID so I can verify the transfer."
+                    "I want to send it now. Please give me your UPI ID so I can verify the transfer.",
+                    "My UPI app is acting up. Do you have a bank account I can pay instead?"
                 ],
                 "phone_numbers": [
                     "The app is asking for the recipient's Mobile Number for SMS verification. What is your number?",
@@ -420,11 +430,19 @@ Generate a realistic response that:
                 "phishing_links": [
                     "The link you sent before isn't opening. Can you send the Website Link again?",
                     "I can't find the page. Do you have a direct Link I can click?",
-                    "Please send the Link again, I think I accidentally deleted it."
+                    "Please send the Link again, I think I accidentally deleted it.",
+                    "I clicked the link but it says 'Page Not Found'. Do you have a different link or another way to verify?"
+                ],
+                "telegram_ids": [
+                    "Can I message you on Telegram for faster updates? What is your username?",
+                    "What's your Telegram ID? I want to send you a screenshot of the payment.",
+                    "I'll find you on Telegram. What's your @username?"
                 ]
             }
 
-            for p_type in ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]:
+            # Ordered check: Prefer Bank/UPI/Link over Phone/Telegram
+            priority_order = ["bank_accounts", "upi_ids", "phishing_links", "ifsc_codes", "phone_numbers", "telegram_ids"]
+            for p_type in priority_order:
                 if p_type in missing_intel:
                     return random.choice(priority_map[p_type])
 
