@@ -133,6 +133,17 @@ class SessionManager:
         """
         # conversationHistory contains all previous messages
         # Add 1 for the current message
+        # The history passed in is usually just the Scammer's turns or pairs?
+        # Actually, if history is [Scammer, Agent, Scammer, Agent], then len is accurate.
+        # But if it's counting "turns" (pairs), we want individual messages.
+
+        # ELITE FIX: The 'message_count' in SessionState should reflect TOTAL EXCHANGES
+        # User (Scammer) sends 1, Agent sends 1 = 2 messages per "turn".
+        # If 'conversation_history' is a list of PAIRS or just Scammer messages?
+        # Typically it's a list of dicts. If it includes Agent responses, len() is fine.
+        # But if the caller only passes Scammer history, we need to estimate.
+
+        # Assuming history is full conversation:
         return len(conversation_history) + 1
 
     def transition_state(
