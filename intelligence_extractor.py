@@ -110,15 +110,23 @@ class IntelligenceExtractor:
                 if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
                 extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
-        # 2.4 Phone Numbers (Legacy Robust Logic)
-        phone_pattern = r'(?<!\d)(?:\+91[\s-]?)?([6-9]\d{9})(?!\d)'
+        # 2.4 Phone Numbers (Enhanced Robust Logic)
+        # Matches +91 with flexible spacing/hyphens, and 10-digit numbers starting with 6-9
+        phone_pattern = r'(?i)(?<!\d)(?:\+?[\s\-]*91[\s\-]*)?([6-9]\d{9})(?!\d)'
         for match in re.finditer(phone_pattern, text):
             value = match.group(0)
 
             start, end = match.span()
             nearby_text = text[max(0, start-30):min(len(text), end+30)].lower()
-            has_phone_context = any(w in nearby_text for w in ["phone", "mobile", "whatsapp", "call", "contact", "tel"])
-            is_explicit = value.startswith("+91") or has_phone_context
+
+            # Positive Context
+            phone_keywords = ["phone", "mobile", "whatsapp", "call", "contact", "tel", "number"]
+            has_phone_context = any(w in nearby_text for w in phone_keywords)
+
+            if not has_phone_context and context_window:
+                 has_phone_context = any(w in context_window[-200:].lower() for w in phone_keywords)
+
+            is_explicit = value.startswith("+") or value.startswith("91") or has_phone_context
 
             if not is_explicit and any(w in nearby_text for w in ["account", "a/c", "ifsc", "upi"]):
                 continue
