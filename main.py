@@ -156,7 +156,7 @@ async def process_message(
         # STEP 2: PRODUCTION - Incremental Scam Detection + Suspicion Accumulation
         # ====================================================================
 
-        scam_result = scam_detector.analyze(current_message.text)
+        scam_result = await scam_detector.analyze(current_message.text, conversation_history)
 
         # ADAPTING FOR LEGACY RULE SYSTEM:
         # Calculate missing fields for incremental scoring
@@ -165,38 +165,9 @@ async def process_message(
         has_urgency = "excessive_urgency" in indicators or "urgent" in indicators
         has_payment_terms = "money_request" in indicators
 
-        # HYBRID LAYER: If score is borderline (0.4 - 0.7), consult LLM
-        # This honors the user's request to use the legacy rules but "on top of that" use LLM.
-        from gemini_client import gemini_client
+        # HYBRID LAYER: Implemented inside ScamDetector (Hybrid LLM + Heuristic)
+        # We use the result directly from scam_detector.analyze
 
-        if 0.4 <= normalized_score <= 0.7:
-             try:
-                 prompt = f"""
-Analyze this message for scam intent.
-Message: "{current_message.text}"
-Context: Conversation with potential victim.
-Return ONLY JSON: {{"is_scam": boolean, "confidence": float}}
-"""
-                 # Call LLM with strict timeout (1s)
-                 llm_text = await gemini_client.generate_response(prompt, operation_name="classifier")
-
-                 import json
-                 if llm_text:
-                     # Clean markdown code blocks if present
-                     llm_text = llm_text.replace("```json", "").replace("```", "").strip()
-                     llm_data = json.loads(llm_text)
-
-                     # Weighted fusion: 40% Rule + 60% LLM
-                     llm_conf = llm_data.get("confidence", 0.5)
-                     normalized_score = (normalized_score * 0.4) + (llm_conf * 0.6)
-
-                     # Update decision
-                     scam_result["is_scam"] = normalized_score >= 0.5
-                     scam_result["confidence_score"] = normalized_score
-                     if scam_result["is_scam"] and scam_result["scam_type"] == "none":
-                         scam_result["scam_type"] = "hybrid_detected"
-             except Exception as e:
-                 logger.error(f"Hybrid detection failed: {e}")
 
         # PRODUCTION REFINEMENT: Accumulate suspicion score
         # ELITE FIX: Only accumulate if scam not yet confirmed, and cap at 2.0
@@ -280,7 +251,7 @@ Return ONLY JSON: {{"is_scam": boolean, "confidence": float}}
         msg_index = total_messages - 1
 
         # CRITICAL: Extract from EVERY message (continuous extraction)
-        extracted_list = intel_extractor.extract(
+        extracted_list = await intel_extractor.extract(
             text=current_message.text,
             message_index=msg_index,
             context_window=context_text
@@ -296,7 +267,7 @@ Return ONLY JSON: {{"is_scam": boolean, "confidence": float}}
         # Backfill extraction every 5 turns (full history scan)
         if msg_index % 5 == 0 and msg_index > 0:
             logger.info(f"Running backfill extraction for {session_id} at turn {msg_index}")
-            backfill_intel = intel_extractor.extract_from_full_history(
+            backfill_intel = await intel_extractor.extract_from_full_history(
                 session.conversation_full,
                 msg_index
             )

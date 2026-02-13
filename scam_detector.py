@@ -1,16 +1,20 @@
 """
 Scam Detection Module
-Analyzes incoming messages to identify scam patterns
+Analyzes incoming messages to identify scam patterns using Hybrid LLM + Heuristic approach
 """
 
 import re
-from typing import Dict, List
+import json
+import logging
+from typing import Dict, List, Optional
 from datetime import datetime
+from gemini_client import gemini_client
 
+logger = logging.getLogger(__name__)
 
 class ScamDetector:
     def __init__(self):
-        # Scam indicators with weights
+        # Scam indicators with weights (Legacy/Fallback)
         self.scam_keywords = {
             # Banking/Financial scams
             "urgent": 2,
@@ -111,16 +115,39 @@ class ScamDetector:
             ]
         }
 
-    def analyze(self, message: str) -> Dict:
+    async def analyze(self, message: str, conversation_history: List[Dict] = None) -> Dict:
         """
-        Analyze a message for scam indicators
+        Analyze a message for scam indicators using Hybrid approach (LLM + Regex)
 
         Returns:
             Dict with is_scam, confidence_score, scam_type, and indicators
         """
-        message_lower = message.lower()
+        # 1. First run Regex analysis (Fast & cheap)
+        regex_result = self._analyze_regex(message)
 
-        # Calculate scam score
+        # 2. Try LLM Analysis (Deep reasoning)
+        llm_result = await self._analyze_with_llm(message, conversation_history, regex_result)
+
+        # 3. Merge results (LLM takes precedence if successful, otherwise Regex)
+        if llm_result:
+            # Merge indicators
+            final_indicators = list(set(regex_result["indicators"] + llm_result.get("tactics", [])))
+            
+            return {
+                "is_scam": llm_result["scamDetected"],
+                "confidence_score": llm_result["confidence"],
+                "scam_type": llm_result["scamType"],
+                "indicators": final_indicators,
+                "extraction_intent": llm_result.get("extractionIntentDetected", False),
+                "analyzed_at": datetime.utcnow().isoformat(),
+                "method": "hybrid_llm"
+            }
+        
+        return regex_result
+
+    def _analyze_regex(self, message: str) -> Dict:
+        """Legacy regex-based analysis"""
+        message_lower = message.lower()
         score = 0
         found_indicators = []
 
@@ -135,8 +162,6 @@ class ScamDetector:
         if urls:
             score += 2
             found_indicators.append("contains_url")
-
-            # Check for suspicious URLs
             for url in urls:
                 for pattern in self.suspicious_url_patterns:
                     if re.search(pattern, url):
@@ -144,13 +169,13 @@ class ScamDetector:
                         found_indicators.append(f"suspicious_url: {url[:50]}")
                         break
 
-        # Check for phone numbers (potential scam contact)
+        # Check for phone numbers
         phone_pattern = r'\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
         if re.search(phone_pattern, message):
             score += 1
             found_indicators.append("contains_phone_number")
 
-        # Check for excessive urgency (multiple exclamation marks, caps)
+        # Check urgency and caps
         if message.count('!') >= 2:
             score += 1
             found_indicators.append("excessive_urgency")
@@ -160,34 +185,90 @@ class ScamDetector:
             score += 2
             found_indicators.append("excessive_caps")
 
-        # Check for money/payment requests
+        # Check money requests
         money_keywords = ['$', 'rupees', 'rs.', 'inr', 'usd', 'payment', 'pay', 'send money']
         if any(keyword in message_lower for keyword in money_keywords):
             score += 2
             found_indicators.append("money_request")
 
-        # Determine scam type
-        scam_type = self._identify_scam_type(message_lower)
-
-        # Calculate confidence score (0-1)
+        # Calculate confidence
         confidence_score = min(score / 10, 1.0)
-
-        # Determine if it's a scam (threshold: 0.5)
         is_scam = confidence_score >= 0.5
+        scam_type = self._identify_scam_type(message_lower) if is_scam else "none"
 
         return {
             "is_scam": is_scam,
             "confidence_score": round(confidence_score, 2),
-            "scam_type": scam_type if is_scam else "none",
+            "scam_type": scam_type,
             "indicators": found_indicators,
             "raw_score": score,
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.utcnow().isoformat(),
+            "method": "regex"
         }
+
+    async def _analyze_with_llm(self, message: str, history: List[Dict], regex_result: Dict) -> Optional[Dict]:
+        """PART 1 - CLASSIFICATION PROMPT (STRUCTURED REASONING)"""
+        try:
+            # Prepare context
+            history_text = ""
+            if history:
+                lines = []
+                for msg in history[-5:]:
+                    sender = msg.get("sender") or msg.get("role", "unknown")
+                    text = msg.get("text") or msg.get("content", "")
+                    lines.append(f"{sender}: {text}")
+                history_text = "\n".join(lines)
+
+            # Strict JSON Prompt
+            prompt = f"""
+You are a cybersecurity scam intelligence engine.
+
+Analyze the conversation context and latest message.
+
+Context:
+{history_text}
+
+Latest Message:
+"{message}"
+
+Internally reason step-by-step:
+1. Identify scam indicators.
+2. Identify psychological manipulation tactics.
+3. Determine scam type.
+4. Identify if financial extraction attempt is underway.
+5. Estimate confidence.
+
+DO NOT output reasoning steps.
+
+Return ONLY valid JSON:
+
+{{
+"scamDetected": boolean,
+"scamType": "string",
+"tactics": [],
+"extractionIntentDetected": boolean,
+"confidence": 0.0-1.0
+}}
+
+Be decisive. Do not hedge. No explanations outside JSON.
+"""
+            
+            response_text = await gemini_client.generate_response(prompt, operation_name="classifier")
+            
+            if not response_text:
+                return None
+                
+            # Clean and parse JSON
+            cleaned_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(cleaned_text)
+            
+        except Exception as e:
+            logger.error(f"LLM Classification failed: {e}")
+            return None
 
     def _identify_scam_type(self, message: str) -> str:
         """Identify the type of scam based on keywords"""
         type_scores = {}
-
         for scam_type, keywords in self.scam_types.items():
             score = sum(1 for keyword in keywords if keyword in message)
             if score > 0:
@@ -195,12 +276,10 @@ class ScamDetector:
 
         if not type_scores:
             return "generic"
-
-        # Return the scam type with highest score
+        
         return max(type_scores.items(), key=lambda x: x[1])[0]
 
     def get_statistics(self) -> Dict:
-        """Get detector statistics and configuration"""
         return {
             "total_keywords": len(self.scam_keywords),
             "scam_types_supported": list(self.scam_types.keys()),
@@ -208,26 +287,19 @@ class ScamDetector:
             "suspicious_url_patterns": len(self.suspicious_url_patterns)
         }
 
-
 # Test the detector
 if __name__ == "__main__":
-    detector = ScamDetector()
+    import asyncio
+    
+    async def test():
+        detector = ScamDetector()
+        
+        msg = "URGENT! Your bank account has been suspended. Click here to verify: http://bit.ly/fake123"
+        print(f"Testing message: {msg}")
+        
+        # Test Regex only (no history)
+        result = await detector.analyze(msg)
+        print("\nResult:")
+        print(json.dumps(result, indent=2))
 
-    test_messages = [
-        "Hi, how are you today?",
-        "URGENT! Your bank account has been suspended. Click here to verify: http://bit.ly/fake123",
-        "Congratulations! You have won $1,000,000 in our lottery. Call +1-800-123-4567 to claim now!",
-        "Your computer is infected with virus. Call Microsoft support immediately at 1-888-999-0000",
-        "Dear Sir, I am a Nigerian prince and need your help transferring $50 million USD..."
-    ]
-
-    print("🔍 Testing Scam Detector\n")
-    for i, msg in enumerate(test_messages, 1):
-        print(f"Test {i}:")
-        print(f"Message: {msg[:80]}...")
-        result = detector.analyze(msg)
-        print(f"Is Scam: {result['is_scam']}")
-        print(f"Confidence: {result['confidence_score']}")
-        print(f"Type: {result['scam_type']}")
-        print(f"Indicators: {', '.join(result['indicators'][:3])}")
-        print("-" * 80)
+    asyncio.run(test())
