@@ -133,7 +133,7 @@ class IntelligenceExtractor:
 
             extracted.append(RawIntel("phone_numbers", value, "strict", 1.0, message_index))
 
-        # 2.5 Phishing Links
+        # 2.5 Phishing Links (Legacy Strict)
         url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
         for match in re.finditer(url_pattern, text):
             extracted.append(RawIntel("phishing_links", match.group(1), "strict", 1.0, message_index))
