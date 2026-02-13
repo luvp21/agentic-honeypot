@@ -73,7 +73,8 @@ class AIHoneypotAgent:
         conversation_history: List[Dict],
         scam_type: str,
         missing_intel: List[str] = None,
-        strategy: str = "DEFAULT"  # EngagementStrategyEnum value
+        strategy: str = "DEFAULT",  # EngagementStrategyEnum value
+        persona_name: Optional[str] = None
     ) -> str:
         """
         Generate a realistic response to scammer's message
@@ -89,8 +90,10 @@ class AIHoneypotAgent:
             AI-generated response
         """
 
-        # Select persona based on scam type
-        persona_name = self._select_persona(scam_type)
+        # Select persona (use provided override or select based on scam type)
+        if not persona_name:
+            persona_name = self._select_persona(scam_type)
+
         persona_details = self.get_persona_info(persona_name)
 
         # Determine conversation stage

@@ -178,7 +178,7 @@ class SessionState(BaseModel):
 
     # Strategy & Persona (NEW - UPGRADE)
     engagement_strategy: EngagementStrategyEnum = EngagementStrategyEnum.DEFAULT
-    persona_type: str = "default"
+    persona_name: str = "elderly"
     last_scammer_move: Optional[str] = None # URGENCY, THREAT, etc.
     intel_stall_counter: int = 0             # Turns since last unique intel extraction
 

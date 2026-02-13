@@ -268,10 +268,15 @@ async def process_message(
             # Scam confirmed!
             detection_method = "rule-based" if scam_result["is_scam"] else "incremental suspicion"
 
+            # Select persona (deterministic mapping)
+            scam_type = scam_result.get("scam_type", "unknown")
+            assigned_persona = ai_agent._select_persona(scam_type)
+
             session_manager.update_session(
                 session_id,
                 is_scam=True,
-                scam_type=scam_result.get("scam_type", "unknown"),
+                scam_type=scam_type,
+                persona_name=assigned_persona,
                 confidence_score=max(scam_result.get("confidence_score", 0.0), session.suspicion_score / 2)
             )
 
@@ -425,7 +430,8 @@ async def process_message(
                 conversation_history=agent_history,
                 scam_type=session.scam_type,
                 missing_intel=missing_intel,
-                strategy=current_strategy
+                strategy=current_strategy,
+                persona_name=session.persona_name
             )
 
             # PRODUCTION REFINEMENT: Validate and sanitize with guardrails
