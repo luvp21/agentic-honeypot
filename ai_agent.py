@@ -96,8 +96,11 @@ class AIHoneypotAgent:
 
         persona_details = self.get_persona_info(persona_name)
 
+        # Initialize turn number
+        turn_number = len(conversation_history)
+
         # Determine conversation stage
-        stage = self._determine_stage(len(conversation_history))
+        stage = self._determine_stage(turn_number)
 
         # Build conversation context
         context = self._build_context(conversation_history[-6:])
@@ -154,7 +157,6 @@ class AIHoneypotAgent:
             )
 
         # Add realistic imperfections (deterministic based on turn count)
-        turn_number = len(conversation_history)
         response = self._add_realistic_touches(response, persona_name, turn_number)
 
         return response
