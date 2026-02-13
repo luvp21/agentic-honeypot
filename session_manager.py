@@ -66,12 +66,48 @@ class SessionManager:
         """
         session = self.get_or_create_session(session_id)
 
+        # FREEZE: Ignore updates if already finalized (state machine stability)
+        if session.state == SessionStateEnum.FINALIZED:
+            logger.warning(
+                f"🔒 [STATE FREEZE] Ignoring update to finalized session {session_id}. "
+                f"Attempted updates: {list(updates.keys())}"
+            )
+            return session
+
         for key, value in updates.items():
             if hasattr(session, key):
                 setattr(session, key, value)
 
         session.last_updated = datetime.utcnow()
         return session
+
+    def apply_suspicion_decay(self, session_id: str, has_suspicious_signal: bool):
+        """
+        ELITE REFINEMENT 5: Suspicion Decay Mechanism
+
+        Apply light decay for non-suspicious turns to prevent runaway suspicion.
+        Decay only applied if:
+        - No regex hit
+        - No urgency term
+        - No payment term
+        - No injection detected
+
+        Args:
+            session_id: Session to decay
+            has_suspicious_signal: Whether current message has suspicious indicators
+        """
+        session = self.get_or_create_session(session_id)
+
+        # Only decay if session is active (not finalized) and no suspicious signal
+        if session.state != SessionStateEnum.FINALIZED and not has_suspicious_signal:
+            original_score = session.suspicion_score
+            session.suspicion_score *= 0.9  # 10% decay
+            session.suspicion_score = min(session.suspicion_score, 2.0)  # Maintain cap
+
+            if original_score > 0.1:  # Only log meaningful decays
+                logger.info(
+                    f"🔄 [SUSPICION DECAY] {session_id}: {original_score:.2f} → {session.suspicion_score:.2f}"
+                )
 
     def is_first_message(self, conversation_history: list) -> bool:
         """

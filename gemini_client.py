@@ -22,7 +22,16 @@ else:
 
 class GeminiClient:
     def __init__(self):
-        self.model = genai.GenerativeModel("models/gemini-flash-latest")
+        # LEADERBOARD OPTIMIZATION: Low-variance configuration
+        self.model = genai.GenerativeModel(
+            "models/gemini-flash-latest",
+            generation_config={
+                "temperature": 0.2,  # Minimize variance for reproducibility
+                "max_output_tokens": 500,  # Constrain length
+                "top_p": 0.9,  # Nucleus sampling parameter
+                "top_k": 20   # Top-k sampling parameter
+            }
+        )
 
     async def generate_response(self, prompt: str, operation_name: str = "generator") -> Optional[str]:
         """

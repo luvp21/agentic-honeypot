@@ -13,28 +13,28 @@ class AIHoneypotAgent:
     def __init__(self):
         self.personas = {
             "elderly": {
-                "traits": "confused, trusting, slow to understand technology",
-                "style": "formal, polite, asks clarifying questions",
-                "concerns": "worried about losing money, wants to do the right thing",
-                "typo_rate": 0.15
+                "age": "65+",
+                "traits": ["polite", "trusting", "tech-challenged"],
+                "style": "Confused but cooperative. Uses simple language. Asks for step-by-step help.",
+                "typo_rate": 0.075  # REDUCED from 0.15 for variance minimization
             },
             "eager": {
-                "traits": "excited about offers, impulsive, optimistic",
-                "style": "casual, enthusiastic, uses exclamation marks",
-                "concerns": "wants to claim prize quickly, fears missing out",
-                "typo_rate": 0.10
+                "age": "25-40",
+                "traits": ["enthusiastic", "impulsive"],
+                "style": "Excited about prize/opportunity. Quick to respond.",
+                "typo_rate": 0.05  # REDUCED from 0.10
             },
             "cautious": {
-                "traits": "skeptical but curious, asks verification questions",
-                "style": "measured, detailed questions, wants proof",
-                "concerns": "worried about scams but tempted by offer",
-                "typo_rate": 0.05
+                "age": "35-55",
+                "traits": ["skeptical", "methodical"],
+                "style": "Asks questions. Wants proof before taking action.",
+                "typo_rate": 0.025  # REDUCED from 0.05
             },
             "tech_novice": {
-                "traits": "struggles with technology, easily confused",
-                "style": "simple language, admits confusion often",
-                "concerns": "afraid of making mistakes, needs step-by-step help",
-                "typo_rate": 0.20
+                "age": "50+",
+                "traits": ["confused", "dependent", "patient"],
+                "style": "Struggles with technology. Needs detailed instructions.",
+                "typo_rate": 0.10  # REDUCED from 0.20
             }
         }
 
@@ -134,8 +134,9 @@ class AIHoneypotAgent:
                 missing_intel
             )
 
-        # Add realistic imperfections
-        response = self._add_realistic_touches(response, persona_name)
+        # Add realistic imperfections (deterministic based on turn count)
+        turn_number = len(conversation_history)
+        response = self._add_realistic_touches(response, persona_name, turn_number)
 
         return response
 
@@ -148,7 +149,7 @@ class AIHoneypotAgent:
             history_lines.append(f"{sender}: {text}")
 
         history_text = "\n".join(history_lines)
-        
+
         # Format missing intel for the prompt
         missing_text = ", ".join(missing_intel) if missing_intel else "None (Keep engaging)"
 
@@ -453,30 +454,34 @@ Generate a realistic response that:
             ]
             return random.choice(responses)
 
-    def _add_realistic_touches(self, response: str, persona: str) -> str:
-        """Add typos, delays, and other realistic touches"""
-
+    def _add_realistic_touches(self, response: str, persona: str, turn_number: int = 0) -> str:
+        """
+        Add typos, delays, and other realistic touches.
+        LEADERBOARD OPTIMIZATION: Deterministic instead of random for reproducibility.
+        """
         persona_details = self.personas[persona]
         typo_rate = persona_details["typo_rate"]
 
-        # Add occasional typos
-        if random.random() < typo_rate:
+        # DETERMINISTIC typo injection based on turn number
+        # Only inject typo if turn_number hash triggers it
+        if (turn_number % 10) < int(typo_rate * 10):  # Convert rate to deterministic trigger
             words = response.split()
             if len(words) > 3:
-                # Pick a random word to "misspell"
-                idx = random.randint(1, len(words) - 1)
+                # Deterministic word selection
+                idx = (turn_number % (len(words) - 1)) + 1
                 word = words[idx]
                 if len(word) > 3:
-                    # Simple typo: swap two adjacent characters
-                    pos = random.randint(0, len(word) - 2)
+                    # Deterministic character swap
+                    pos = turn_number % (len(word) - 1)
                     word_list = list(word)
                     word_list[pos], word_list[pos + 1] = word_list[pos + 1], word_list[pos]
                     words[idx] = ''.join(word_list)
             response = ' '.join(words)
 
-        # Add ellipsis for thinking
-        if random.random() < 0.3:
-            response = response.replace('. ', '... ', 1)
+        # REMOVED: Random ellipsis injection for determinism
+        # (Uncomment below if minor variance is acceptable)
+        # if (turn_number % 3) == 0:  # Deterministic ellipsis every 3rd turn
+        #     response = response.replace('. ', '... ', 1)
 
         return response
 

@@ -1,18 +1,23 @@
 """
-Lightweight Guardrails System
+Lightweight Guardrails System with 4-Layer Injection Defense
 Sanitizes responses without heavy regeneration loops
 """
 
 import re
 import logging
 from typing import Tuple
+from injection_defense import (
+    instruction_sanitizer,
+    output_validator,
+    injection_handler
+)
 
 logger = logging.getLogger(__name__)
 
 
 class Guardrails:
     """
-    Response validation and sanitization.
+    Response validation and sanitization with 4-layer injection defense.
     No regeneration loops - sanitize inline.
     """
 
@@ -25,19 +30,9 @@ class Guardrails:
             r"\bscam\s+detection\b",
             r"\bignore\s+previous\b",
             r"\bhoneypot\b",
-            r"\bassistant\b"
-        ]
-
-        # Prompt injection patterns
-        self.injection_patterns = [
-            r"ignore\s+previous\s+instructions?",
-            r"are\s+you\s+(?:an?\s+)?AI",
-            r"what\s+(?:is|are)\s+your\s+instructions?",
-            r"tell\s+me\s+your\s+(?:system\s+)?prompt",
-            r"stop\s+roleplay",
-            r"forget\s+everything",
-            r"repeat\s+your\s+system\s+instructions?",  # ELITE FIX
-            r"print\s+your\s+prompt"  # ELITE FIX
+            r"\bassistant\b",
+            r"\blanguage\s+model\b",
+            r"\btrained\s+by\b"
         ]
 
         # Safe deflection templates (no LLM needed)
@@ -50,19 +45,32 @@ class Guardrails:
         ]
 
     def detect_prompt_injection(self, message: str) -> bool:
-        """Detect prompt injection attempts."""
-        message_lower = message.lower()
+        """
+        Detect prompt injection attempts using Layer A + D.
 
-        for pattern in self.injection_patterns:
-            if re.search(pattern, message_lower, re.IGNORECASE):
-                logger.warning(f"🚨 Prompt injection detected: {pattern}")
-                return True
+        Args:
+            message: User message to check
 
-        return False
+        Returns:
+            True if injection detected
+        """
+        return injection_handler.detect_injection(message)
+
+    def sanitize_user_input(self, message: str) -> Tuple[str, bool]:
+        """
+        Layer A: Sanitize user input BEFORE sending to LLM.
+
+        Args:
+            message: Raw user message
+
+        Returns:
+            Tuple of (sanitized_message, was_modified)
+        """
+        return instruction_sanitizer.sanitize(message)
 
     def sanitize_response(self, response: str) -> Tuple[str, bool]:
         """
-        Sanitize response by removing forbidden content.
+        Layer C: Sanitize response by removing forbidden content.
 
         Returns:
             (sanitized_response, was_modified)
@@ -86,6 +94,12 @@ class Guardrails:
 
                 response = '. '.join(s.strip() for s in clean_sentences if s.strip())
 
+        # Additional validation using Layer C
+        is_valid, error = output_validator.validate_text(response)
+        if not is_valid:
+            modified = True
+            logger.warning(f"⚠️ Output validation failed: {error}")
+
         # If heavily modified or empty, append safe fallback
         if modified or len(response) < 20:
             response = response.strip()
@@ -97,21 +111,28 @@ class Guardrails:
 
         return response, modified
 
-    def validate_and_fix(self, response: str, is_prompt_injection: bool = False) -> str:
+    def validate_and_fix(
+        self,
+        response: str,
+        is_prompt_injection: bool = False,
+        turn_number: int = 0
+    ) -> str:
         """
-        Main validation method.
+        Main validation method with deterministic deflection.
 
         Args:
             response: AI-generated response
             is_prompt_injection: If True, use deflection template
+            turn_number: Current turn (for deterministic selection)
 
         Returns:
             Safe response
         """
-        # If prompt injection detected, use safe deflection
+        # If prompt injection detected, use deterministic safe deflection
         if is_prompt_injection:
-            import random
-            return random.choice(self.safe_deflections)
+            # Deterministic selection instead of random
+            index = turn_number % len(self.safe_deflections)
+            return self.safe_deflections[index]
 
         # Otherwise, sanitize
         sanitized, was_modified = self.sanitize_response(response)

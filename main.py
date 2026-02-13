@@ -30,6 +30,7 @@ from callback import send_callback_with_retry
 from test_logger import test_logger  # NEW: Platform test logging
 from guardrails import guardrails  # PRODUCTION REFINEMENT
 from llm_safety import is_llm_available  # PRODUCTION REFINEMENT
+from response_stability_filter import response_stability_filter  # ELITE REFINEMENT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -148,9 +149,57 @@ async def process_message(
         # Update message count
         session_manager.update_session(session_id, message_count=total_messages)
 
-        logger.info(
-            f"Session {session_id}: Message {total_messages}, State: {session.state}"
-        )
+        # ====================================================================
+        # ELITE REFINEMENT 7: Hard Termination Lock (Turn 15 Limit)
+        # ====================================================================
+        if total_messages >= 15:
+            logger.warning(f"🏁 [HARD TERMINATION] Session {session_id} reached 15 turns. Forcing completion.")
+
+            # Force FINALIZED state
+            session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
+
+            # Final reply (Neutral)
+            final_reply = "I think I have provided everything needed. Please let me know if there is anything else."
+
+            # Handle callback (ensure sent)
+            callback_status = session_manager.should_send_callback(session_id, total_messages - 1)
+            if callback_status["send"]:
+                send_callback_with_retry(
+                    session_id=session_id,
+                    scam_detected=session.is_scam,
+                    total_messages=total_messages,
+                    extracted_intelligence=session.extracted_intelligence,
+                    scam_type=session.scam_type,
+                    scammer_profile=session.scammer_profile,
+                    max_retries=2,
+                    status=callback_status["type"]
+                )
+                session_manager.mark_callback_sent(session_id, callback_status["type"])
+
+            return HoneypotResponse(status="success", reply=final_reply)
+
+        # ====================================================================
+        # STEP 1.5: PROMPT INJECTION DEFENSE - Sanitize user input (Layer A)
+        # ====================================================================
+        is_prompt_injection = guardrails.detect_prompt_injection(current_message.text)
+
+        # Sanitize user input before LLM processing
+        sanitized_text, was_sanitized = guardrails.sanitize_user_input(current_message.text)
+
+        if was_sanitized:
+            logger.warning(
+                f"🛡️ [INJECTION DEFENSE] User input sanitized for session {session_id}"
+            )
+            # Use sanitized version for detection/extraction
+            current_message.text = sanitized_text
+
+        # Apply injection penalty if detected (Layer D)
+        if is_prompt_injection:
+            session.suspicion_score = min(session.suspicion_score + 0.25, 2.0)
+            session.engagement_strategy = "SAFETY_DEFLECT"  # Force defensive mode
+            logger.warning(
+                f"🚨 [INJECTION DETECTED] Penalty applied: suspicion +0.25 → {session.suspicion_score:.2f}"
+            )
 
         # ====================================================================
         # STEP 2: PRODUCTION - Incremental Scam Detection + Suspicion Accumulation
@@ -199,6 +248,21 @@ async def process_message(
                 f"Session {session_id} suspicion score: {session.suspicion_score:.2f}"
             )
 
+        # ═══════════════════════════════════════════════════════════
+        # ELITE REFINEMENT 5: Suspicion Decay Mechanism
+        # ═══════════════════════════════════════════════════════════
+        has_suspicious_signal = (
+            scam_result.get("is_scam", False) or
+            normalized_score > 0.4 or
+            is_prompt_injection or
+            has_urgency or
+            has_payment_terms
+        )
+        session_manager.apply_suspicion_decay(session_id, has_suspicious_signal)
+
+        # ====================================================================
+        # STEP 2.5: STATE FREEZE - Only accumulate suspicion if not yet confirmed
+        # ====================================================================
         # Trigger scam detection via suspicion score OR rule-based
         if not session.is_scam and (scam_result["is_scam"] or session.suspicion_score > 1.2):
             # Scam confirmed!
@@ -365,13 +429,34 @@ async def process_message(
             )
 
             # PRODUCTION REFINEMENT: Validate and sanitize with guardrails
-            is_prompt_injection = scam_result.get("is_prompt_injection", False) or \
-                                  guardrails.detect_prompt_injection(current_message.text)
+            # Use already-detected injection flag from earlier in the pipeline
 
             agent_response = guardrails.validate_and_fix(
                 agent_response,
-                is_prompt_injection=is_prompt_injection
+                is_prompt_injection=is_prompt_injection,
+                turn_number=total_messages  # Deterministic deflection selection
             )
+
+            # ═══════════════════════════════════════════════════════════
+            # ELITE REFINEMENT 6: Response Stability Filter
+            # ═══════════════════════════════════════════════════════════
+            persona_name = session.persona_name or "elderly"
+            fallback_reply = ai_agent._generate_rule_based_response(
+                message=current_message.text,
+                persona=persona_name,
+                stage=session.state.value if hasattr(session.state, "value") else str(session.state),
+                scam_type=session.scam_type,
+                turn_count=total_messages,
+                missing_intel=missing_intel
+            )
+
+            agent_response, was_rejected = response_stability_filter.apply_filter(
+                response=agent_response,
+                fallback=fallback_reply
+            )
+
+            if was_rejected:
+                logger.info(f"🛡️ [STABILITY FALLBACK] Replaced AI-like response for {session_id}")
 
             logger.info(
                 f"🤖 Agent response for {session_id}: "
