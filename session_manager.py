@@ -235,17 +235,27 @@ class SessionManager:
             return True
 
         # Criterion C: ELITE FIX - Balance richness AND duration
-        # Extracted unique intelligence types >= 3 AND totalTurns >= 8
+        # We want to wait for Phishing Links if missing, but don't hang forever
+        has_links = bool(session.intel_graph.get("phishing_links")) or bool(session.intel_graph.get("short_urls"))
+
+        # If no links yet, we are more patient (require 12 turns or 4 types)
+        min_turns_c = 8 if has_links else 12
+        min_types_c = 3 if has_links else 4
+
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
-        if unique_intel_types >= 3 and session.message_count >= 8:
+        if unique_intel_types >= min_types_c and session.message_count >= min_turns_c:
             logger.info(
                 f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (sufficient)"
             )
             return True
 
-        # Criterion A: No new intel for 3 turns AND turns >= 8
+        # Criterion A: No new intel for X turns AND turns >= Y
+        # Be more patient if links are missing
+        min_turns_a = 8 if has_links else 12
+        stall_threshold = 3 if has_links else 5
+
         turns_since_new_intel = session.message_count - session.last_new_intel_turn
-        if turns_since_new_intel >= 3 and session.message_count >= 8:
+        if turns_since_new_intel >= stall_threshold and session.message_count >= min_turns_a:
             logger.info(
                 f"Intelligent termination for {session_id}: "
                 f"no new intel for {turns_since_new_intel} turns, total={session.message_count}"

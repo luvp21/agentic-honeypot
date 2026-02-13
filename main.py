@@ -510,13 +510,15 @@ async def process_message(
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
             # Send callback with scammer profile
+            # ELITE FIX: total_messages reflects (history + current_message).
+            # We add 1 to account for the agent_response we just generated.
             callback_success = send_callback_with_retry(
                 session_id=session_id,
                 scam_detected=session.is_scam,
-                total_messages=total_messages,
+                total_messages=total_messages + 1,
                 extracted_intelligence=session.extracted_intelligence,
                 scam_type=session.scam_type,
-                scammer_profile=session.scammer_profile,  # NEW
+                scammer_profile=session.scammer_profile,
                 max_retries=3,
                 status=callback_type
             )
