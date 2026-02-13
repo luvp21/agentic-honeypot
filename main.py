@@ -452,7 +452,7 @@ async def process_message(
                 persona=persona_name,
                 stage=session.state.value if hasattr(session.state, "value") else str(session.state),
                 scam_type=session.scam_type,
-                turn_count=total_messages,
+                turn_number=total_messages,
                 missing_intel=missing_intel
             )
 
