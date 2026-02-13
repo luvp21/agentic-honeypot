@@ -30,6 +30,7 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     return ExtractedIntelligence(
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
+        ifscCodes=extracted_data.get("ifsc_codes", []),
         phishingLinks=extracted_data.get("phishing_links", []),
         phoneNumbers=extracted_data.get("phone_numbers", []),
         suspiciousKeywords=extracted_data.get("suspicious_keywords", []),

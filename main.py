@@ -150,6 +150,42 @@ async def process_message(
         session_manager.update_session(session_id, message_count=total_messages)
 
         # ====================================================================
+        # STEP 1.25: CONTINUOUS Intelligence Extraction (Run BEFORE Termination)
+        # ====================================================================
+
+        # Build context window from last 5 messages
+        context_msgs = conversation_history[-5:] if conversation_history else []
+        context_text = " ".join([m.text for m in context_msgs])
+
+        # Message index is total messages - 1 (0-indexed)
+        msg_index = total_messages - 1
+
+        # CRITICAL: Extract from EVERY message (continuous extraction)
+        extracted_list = await intel_extractor.extract(
+            text=current_message.text,
+            message_index=msg_index,
+            context_window=context_text
+        )
+
+        if extracted_list:
+            # Update session graph
+            session_manager.update_intel_graph(session_id, extracted_list)
+            # Log what was found
+            found_types = list(set([x.type for x in extracted_list]))
+            logger.info(f"Intelligence extracted for {session_id}: {found_types}")
+
+        # Backfill extraction every 5 turns (full history scan)
+        if msg_index % 5 == 0 and msg_index > 0:
+            logger.info(f"Running backfill extraction for {session_id} at turn {msg_index}")
+            backfill_intel = await intel_extractor.extract_from_full_history(
+                session.conversation_full,
+                msg_index
+            )
+            if backfill_intel:
+                session_manager.update_intel_graph(session_id, backfill_intel)
+                logger.info(f"Backfill found {len(backfill_intel)} additional items")
+
+        # ====================================================================
         # ELITE REFINEMENT 7: Hard Termination Lock (Turn 15 Limit)
         # ====================================================================
         if total_messages >= 15:
@@ -248,6 +284,20 @@ async def process_message(
                 f"Session {session_id} suspicion score: {session.suspicion_score:.2f}"
             )
 
+            # Add suspicious keywords from scam detector (Late Binding)
+            if scam_result.get("indicators"):
+                from intelligence_extractor import RawIntel
+                keyword_intel = []
+                for kw in scam_result["indicators"][:5]:
+                    keyword_intel.append(RawIntel(
+                        type="suspicious_keywords",
+                        value=kw,
+                        source="scam_detector",
+                        confidence_delta=0.5,
+                        message_index=msg_index
+                    ))
+                session_manager.update_intel_graph(session_id, keyword_intel)
+
         # ═══════════════════════════════════════════════════════════
         # ELITE REFINEMENT 5: Suspicion Decay Mechanism
         # ═══════════════════════════════════════════════════════════
@@ -308,55 +358,15 @@ async def process_message(
                 f"message {total_messages}, type={session.scam_type}, state={session.state}"
             )
 
-        # ====================================================================
-        # STEP 3: CONTINUOUS Intelligence Extraction (ALWAYS RUNS)
-        # ====================================================================
+        if session.is_scam:
+            # Transition progression based on turn count
+            if total_messages >= 3 and session.state == SessionStateEnum.SCAM_DETECTED:
+                session_manager.transition_state(session_id, SessionStateEnum.ENGAGING)
+                logger.info(f"Session {session_id} transitioned to ENGAGING phase")
 
-        # Build context window from last 5 messages
-        context_msgs = conversation_history[-5:] if conversation_history else []
-        context_text = " ".join([m.text for m in context_msgs])
-
-        # Message index is total messages - 1 (0-indexed)
-        msg_index = total_messages - 1
-
-        # CRITICAL: Extract from EVERY message (continuous extraction)
-        extracted_list = await intel_extractor.extract(
-            text=current_message.text,
-            message_index=msg_index,
-            context_window=context_text
-        )
-
-        if extracted_list:
-            # Update session graph
-            session_manager.update_intel_graph(session_id, extracted_list)
-            # Log what was found
-            found_types = list(set([x.type for x in extracted_list]))
-            logger.info(f"Intelligence extracted for {session_id}: {found_types}")
-
-        # Backfill extraction every 5 turns (full history scan)
-        if msg_index % 5 == 0 and msg_index > 0:
-            logger.info(f"Running backfill extraction for {session_id} at turn {msg_index}")
-            backfill_intel = await intel_extractor.extract_from_full_history(
-                session.conversation_full,
-                msg_index
-            )
-            if backfill_intel:
-                session_manager.update_intel_graph(session_id, backfill_intel)
-                logger.info(f"Backfill found {len(backfill_intel)} additional items")
-
-        # Add suspicious keywords from scam detector
-        if scam_result.get("indicators"):
-            from intelligence_extractor import RawIntel
-            keyword_intel = []
-            for kw in scam_result["indicators"][:5]:
-                keyword_intel.append(RawIntel(
-                    type="suspicious_keywords",
-                    value=kw,
-                    source="scam_detector",
-                    confidence_delta=0.5,
-                    message_index=msg_index
-                ))
-            session_manager.update_intel_graph(session_id, keyword_intel)
+            elif total_messages >= 7 and session.state == SessionStateEnum.ENGAGING:
+                session_manager.transition_state(session_id, SessionStateEnum.EXTRACTING)
+                logger.info(f"Session {session_id} transitioned to EXTRACTING phase")
 
         # ====================================================================
         # STEP 4: State Transitions (ENGAGING → EXTRACTING)
@@ -407,6 +417,9 @@ async def process_message(
 
             if not features.get("phone_numbers"):
                 missing_intel.append("phone_numbers")
+
+            if not features.get("phishing_links"):
+                missing_intel.append("phishing_links")
 
             # Convert conversation history to agent format
             agent_history = []

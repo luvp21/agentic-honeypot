@@ -156,6 +156,14 @@ class AIHoneypotAgent:
         # Format missing intel for the prompt
         missing_text = ", ".join(missing_intel) if missing_intel else "None (Keep engaging)"
 
+        # Prioritize specific missing intel
+        priority_order = ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]
+        target_intel = "payment details"
+        for p_type in priority_order:
+            if missing_intel and p_type in missing_intel:
+                target_intel = p_type.replace("_", " ")
+                break
+
         return f"""
 You are simulating a vulnerable elderly victim (68 years old, anxious, tech-illiterate but cooperative).
 Persona Traits: {persona.get('traits', 'N/A')}
@@ -164,19 +172,21 @@ Persona Style: {persona.get('style', 'N/A')}
 Current Context:
 - Scam Type: {scam_type}
 - Conversation Stage: {stage}
-- Missing Intelligence we need to extract: {missing_text}
+- Missing Intelligence: {missing_text}
 
-Your objective is NOT to end the conversation.
-Your objective is to:
+CRITICAL INSTRUCTION:
+Your HIGHEST PRIORITY is to get the scammer to reveal their {target_intel}.
+If you do not have the {target_intel}, you MUST ask for it or create a scenario where they need to provide it (e.g., "My bank app asks for your {target_intel}").
+
+Objectives:
 1. Keep the scammer engaged.
-2. Increase emotional investment.
-3. Subtly force them to reveal payment details.
+2. SUBTLY force them to reveal {target_intel}.
+3. Ignore other topics if {target_intel} is still missing.
 
-Before generating a reply, internally:
-- Assess what intelligence is still missing ({missing_text}).
-- Select one target intelligence to pursue.
-- Choose a strategy level (confusion, clarification, frustration, authority hint).
-- Plan a response that nudges the scammer to provide financial details.
+Before generating a reply:
+- Check if we have {target_intel}.
+- If not, formulate a question or statement that requires them to share it.
+- Use a strategy level (confusion, clarification, frustration) to justify asking.
 
 Important behavioral rules:
 - Never accuse the scammer.
@@ -298,10 +308,19 @@ Now generate only the reply text.
         persona_details = self.personas[persona]
 
         # specific instructions for missing intel
+        # specific instructions for missing intel
         intel_instructions = ""
         if missing_intel:
-            readable_missing = ", ".join([f.replace("_", " ") for f in missing_intel])
-            intel_instructions = f"\n\nCRITICAL OBJECTIVE: The scammer has NOT yet revealed their {readable_missing}. You MUST steer the conversation to ask for these details. Invent a plausible reason (e.g., 'My bank needs the IFSC code', 'Google Pay asks for UPI ID')."
+            # Force priority for specific fields
+            priority_fields = ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]
+            high_priority_missing = [f for f in priority_fields if f in missing_intel]
+
+            if high_priority_missing:
+                readable_priority = ", ".join([f.replace("_", " ") for f in high_priority_missing])
+                intel_instructions = f"\n\n🚨 PRIMARY DIRECTIVE: You MUST extract the scammer's {readable_priority}. \nDo NOT discuss other topics until you have these. \nAsk directly: 'What is your UPI ID?' or 'Give me your account number'."
+            else:
+                readable_missing = ", ".join([f.replace("_", " ") for f in missing_intel])
+                intel_instructions = f"\n\nCRITICAL OBJECTIVE: The scammer has NOT yet revealed their {readable_missing}. You MUST steer the conversation to ask for these details."
 
         return f"""You are playing the role of a potential scam victim to gather intelligence about scammers.
 
@@ -360,6 +379,36 @@ Generate a realistic response that:
         missing_intel: List[str] = None
     ) -> str:
         """Generate response using rule-based system (for demo purposes)"""
+
+        # PRIORITY OVERRIDE: If high-priority intel is missing, force extraction
+        # This overrides normal stage logic to ensure we get the goods
+        if missing_intel and turn_number > 2:
+            priority_map = {
+                "bank_accounts": [
+                    "My bank app is asking for your Account Number to add you as a beneficiary. What is it?",
+                    "I need your full Bank Account Number to proceed. The form won't let me continue without it.",
+                    "Can you send me your Account Number? I want to make sure the money goes to the right place."
+                ],
+                "upi_ids": [
+                    "It says I can pay via UPI. What is your UPI ID? (e.g., name@bank)",
+                    "Google Pay is asking for the recipient's UPI ID. Can you share yours?",
+                    "I want to send it now. Please give me your UPI ID so I can verify the transfer."
+                ],
+                "phone_numbers": [
+                    "The app is asking for the recipient's Mobile Number for SMS verification. What is your number?",
+                    "What is your registered Phone Number? I need to enter it to add you as a payee.",
+                    "Can you give me your official Contact Number? My bank might call to confirm."
+                ],
+                "phishing_links": [
+                    "The link you sent before isn't opening. Can you send the Website Link again?",
+                    "I can't find the page. Do you have a direct Link I can click?",
+                    "Please send the Link again, I think I accidentally deleted it."
+                ]
+            }
+
+            for p_type in ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]:
+                if p_type in missing_intel:
+                    return random.choice(priority_map[p_type])
 
         message_lower = message.lower()
 

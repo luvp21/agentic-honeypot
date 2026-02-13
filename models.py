@@ -125,6 +125,7 @@ class ExtractedIntelligence(BaseModel):
     """
     bankAccounts: List[str] = Field(default_factory=list, description="Extracted bank account numbers")
     upiIds: List[str] = Field(default_factory=list, description="Extracted UPI IDs")
+    ifscCodes: List[str] = Field(default_factory=list, description="Extracted IFSC Codes")
     phishingLinks: List[str] = Field(default_factory=list, description="Phishing URLs")
     phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
     suspiciousKeywords: List[str] = Field(default_factory=list, description="Scam indicators")
