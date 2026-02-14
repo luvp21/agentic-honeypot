@@ -27,7 +27,7 @@ class SessionManager:
         self.profiler = BehavioralProfiler()
 
         # Configuration
-        self.MAX_TURNS_THRESHOLD = 15  # Minimum turns before finalization
+        self.MAX_TURNS_THRESHOLD = 20  # Hard limit - maximum conversation turns
         self.IDLE_TIMEOUT_SECONDS = 60  # Max idle time before finalization
 
     def get_or_create_session(self, session_id: str) -> SessionState:
@@ -255,27 +255,41 @@ class SessionManager:
         # If ANYTHING is missing from the critical 5 (phone, UPI, bank, IFSC, links), delay callback
         core_critical = [has_phone, has_upi, has_bank, has_ifsc, has_links]
         missing_count = sum(1 for x in core_critical if not x)
+        
+        # HIGH-PRIORITY intel types (most valuable for investigation)
+        high_priority = [has_links, has_phone, has_upi]
+        high_priority_count = sum(1 for x in high_priority if x)
+        missing_high_priority = sum(1 for x in high_priority if not x)
 
         # Only finalize if:
-        # 1. We have ALL 5 core critical types AND reached turn 14+ (give 2 more turns to collect additional items)
-        # 2. We have 4+ types AND reached turn 14 (almost at hard limit)
-        # IMPORTANT: Even if we have "all types", there might be MULTIPLE items per type (e.g., 2 UPI IDs)
-        # So we wait a bit longer to give scammer chance to provide more details
-        if missing_count == 0 and session.message_count >= 14:
+        # 1. We have ALL 5 core critical types AND ALL 3 high-priority types AND reached turn 16+
+        #    (give more time to collect MULTIPLE items per high-value type)
+        # 2. We have ALL 5 types but missing high-priority → wait until turn 17
+        # 3. We have 4+ types AND reached turn 18 (very close to hard limit)
+        # PRIORITY: Links, Phone Numbers, UPI IDs are most valuable - wait longer to get multiples
+        
+        if missing_count == 0 and missing_high_priority == 0 and session.message_count >= 16:
+            # Have everything including all high-priority types
+            logger.info(
+                f"Session {session_id} extracted ALL core intel types (including high-priority) at turn {session.message_count}"
+            )
+            return True
+        elif missing_count == 0 and session.message_count >= 17:
+            # Have all 5 types but give extra time for high-priority items
             logger.info(
                 f"Session {session_id} extracted ALL core intel types at turn {session.message_count}"
             )
             return True
-        elif unique_intel_types >= 4 and session.message_count >= 14:
+        elif unique_intel_types >= 4 and session.message_count >= 18:
             logger.info(
                 f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (near limit)"
             )
             return True
 
         # Criterion A: No new intel for X turns AND turns >= Y
-        # Only trigger if we're very close to hard limit (turn 14+)
-        min_turns_a = 14
-        stall_threshold = 4
+        # Only trigger if we're very close to hard limit (turn 18+)
+        min_turns_a = 18
+        stall_threshold = 5  # More patience for stalled extraction
 
         turns_since_new_intel = session.message_count - session.last_new_intel_turn
         if turns_since_new_intel >= stall_threshold and session.message_count >= min_turns_a:

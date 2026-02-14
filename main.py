@@ -195,10 +195,10 @@ async def process_message(
                 performance_logger.log_intelligence_extraction(session_id, total_messages, backfill_intel, "BACKFILL")
 
         # ====================================================================
-        # ELITE REFINEMENT 7: Hard Termination Lock (Turn 15 Limit)
+        # ELITE REFINEMENT 7: Hard Termination Lock (Turn 20 Limit)
         # ====================================================================
-        if total_messages >= 15:
-            logger.warning(f"🏁 [HARD TERMINATION] Session {session_id} reached 15 turns. Forcing completion.")
+        if total_messages >= 20:
+            logger.warning(f"🏁 [HARD TERMINATION] Session {session_id} reached 20 turns. Forcing completion.")
 
             # Force FINALIZED state
             session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
@@ -509,6 +509,18 @@ async def process_message(
         # ====================================================================
 
         if session.is_scam and session_manager.is_finalized(session_id):
+            # FINAL EXTRACTION SWEEP: Do one last comprehensive backfill before finalizing
+            # This ensures we catch any intel items we might have missed
+            logger.info(f"🔍 Final extraction sweep for {session_id} before finalization")
+            final_backfill = await intel_extractor.extract_from_full_history(
+                session.conversation_full,
+                total_messages - 1
+            )
+            if final_backfill:
+                session_manager.update_intel_graph(session_id, final_backfill)
+                logger.info(f"Final sweep found {len(final_backfill)} additional items")
+                performance_logger.log_intelligence_extraction(session_id, total_messages, final_backfill, "FINAL_SWEEP")
+            
             # Transition to FINALIZED state
             session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
             logger.info(
@@ -580,7 +592,7 @@ async def process_message(
                 "scam_type": session.scam_type,
                 "intel_count": intel_count,
                 "callback_sent": session.callback_sent,
-                "finalization_trigger": "hard_limit" if total_messages >= 15 else "intelligent"
+                "finalization_trigger": "hard_limit" if total_messages >= 20 else "intelligent"
             })
             session._summary_logged = True  # Prevent duplicate logging
 
