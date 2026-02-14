@@ -234,26 +234,41 @@ class SessionManager:
             )
             return True
 
-        # Criterion C: ELITE FIX - Balance richness AND duration
-        # We want to wait for Phishing Links/IFSC if missing, but don't hang forever
+        # Criterion C: ENHANCED - Wait for ALL possible intel extraction
+        # Check all trackable intelligence types
         has_links = bool(session.intel_graph.get("phishing_links")) or bool(session.intel_graph.get("short_urls"))
         has_ifsc = bool(session.intel_graph.get("ifsc_codes"))
+        has_phone = bool(session.intel_graph.get("phone_numbers"))
+        has_upi = bool(session.intel_graph.get("upi_ids"))
+        has_bank = bool(session.intel_graph.get("bank_accounts"))
+        has_telegram = bool(session.intel_graph.get("telegram_ids"))
 
-        # If critical intel is missing, we are more patient
-        is_missing_critical = not (has_links and has_ifsc)
-        min_turns_c = 12 if is_missing_critical else 8
-        min_types_c = 4 if is_missing_critical else 3
-
+        # Count ALL intel types we've extracted
+        critical_count = sum([has_links, has_ifsc, has_phone, has_upi, has_bank, has_telegram])
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
-        if unique_intel_types >= min_types_c and session.message_count >= min_turns_c:
+        
+        # If ANYTHING is missing from the critical 5 (phone, UPI, bank, IFSC, links), delay callback
+        core_critical = [has_phone, has_upi, has_bank, has_ifsc, has_links]
+        missing_count = sum(1 for x in core_critical if not x)
+        
+        # Only finalize if:
+        # 1. We have ALL 5 core critical types AND reached turn 12+, OR
+        # 2. We have 4+ types AND reached turn 14 (almost at hard limit)
+        if missing_count == 0 and session.message_count >= 12:
             logger.info(
-                f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (sufficient)"
+                f"Session {session_id} extracted ALL core intel types at turn {session.message_count}"
+            )
+            return True
+        elif unique_intel_types >= 4 and session.message_count >= 14:
+            logger.info(
+                f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (near limit)"
             )
             return True
 
         # Criterion A: No new intel for X turns AND turns >= Y
-        min_turns_a = 12 if is_missing_critical else 8
-        stall_threshold = 5 if is_missing_critical else 3
+        # Only trigger if we're very close to hard limit (turn 14+)
+        min_turns_a = 14
+        stall_threshold = 4
 
         turns_since_new_intel = session.message_count - session.last_new_intel_turn
         if turns_since_new_intel >= stall_threshold and session.message_count >= min_turns_a:
