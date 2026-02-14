@@ -27,7 +27,6 @@ from scam_detector import ScamDetector
 from ai_agent import AIHoneypotAgent
 from intelligence_extractor import IntelligenceExtractor
 from callback import send_callback_with_retry
-from test_logger import test_logger  # NEW: Platform test logging
 from guardrails import guardrails  # PRODUCTION REFINEMENT
 from llm_safety import is_llm_available  # PRODUCTION REFINEMENT
 from response_stability_filter import response_stability_filter  # ELITE REFINEMENT
@@ -543,17 +542,6 @@ async def process_message(
             if callback_success:
                 session_manager.mark_callback_sent(session_id, callback_type)
                 logger.info(f"✅ {callback_type.capitalize()} callback sent for {session_id}")
-
-                # LOG: Record final callback for test analysis
-                test_logger.finalize_session(
-                    session_id=session_id,
-                    callback_data={
-                        "scamDetected": session.is_scam,
-                        "totalMessagesExchanged": total_messages,
-                        "extractedIntelligence": session.extracted_intelligence,
-                        "callback_type": callback_type
-                    }
-                )
             else:
                 logger.error(f"❌ Callback failed for {session_id}")
 
@@ -578,13 +566,6 @@ async def process_message(
         response = HoneypotResponse(
             status="success",
             reply=agent_response
-        )
-
-        # LOG: Capture platform test data
-        test_logger.log_request(
-            session_id=session_id,
-            request_data=request.dict(),
-            response_data=response.dict()
         )
 
         # HACKATHON: Log API response time and session summary if finalized
