@@ -130,6 +130,7 @@ class AIHoneypotAgent:
 
         # GENERATION: Try LLM first, then fallback to rules
         response = None
+        generation_method = None
 
         # 1. Try Gemini LLM if available
         from gemini_client import gemini_client
@@ -140,10 +141,12 @@ class AIHoneypotAgent:
 
             if llm_response:
                 response = llm_response.strip()
+                generation_method = "LLM_GEMINI"
 
         # 2. Use strategy response if LLM failed or specific strategy required
         if not response and strategy_response:
             response = strategy_response
+            generation_method = "STRATEGY_OVERRIDE"
 
         # 3. Fallback to rule-based if everything else failed
         if not response:
@@ -154,6 +157,21 @@ class AIHoneypotAgent:
                 scam_type,
                 len(conversation_history),
                 missing_intel
+            )
+            generation_method = "RULE_BASED"
+
+        # HACKATHON: Log generation method
+        if generation_method:
+            from performance_logger import performance_logger
+            performance_logger.log_generation_method(
+                session_id="RUNTIME",  # Will be set in main.py
+                turn=turn_number,
+                method=generation_method,
+                details={
+                    "strategy": strategy,
+                    "stage": stage,
+                    "missing_intel": missing_intel[:3] if missing_intel else []
+                }
             )
 
         # Add realistic imperfections (deterministic based on turn count)

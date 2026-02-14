@@ -6,8 +6,10 @@ CRITICAL: This is MANDATORY for hackathon scoring
 
 import requests
 import logging
+import time
 from typing import Dict, List
 from models import FinalCallbackPayload, ExtractedIntelligence
+from performance_logger import performance_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,22 +31,22 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     """
     # Build 'other' dict for additional intelligence types
     other_intel = {}
-    
+
     # Add telegram IDs if present
     telegram_ids = extracted_data.get("telegram_ids", [])
     if telegram_ids:
         other_intel["telegramIds"] = telegram_ids
-    
+
     # Add short URLs if present
     short_urls = extracted_data.get("short_urls", [])
     if short_urls:
         other_intel["shortUrls"] = short_urls
-    
+
     # Add QR mentions if present
     qr_mentions = extracted_data.get("qr_mentions", [])
     if qr_mentions:
         other_intel["qrMentions"] = qr_mentions
-    
+
     return ExtractedIntelligence(
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
@@ -74,7 +76,7 @@ def generate_agent_notes(
         len(intelligence.phishingLinks) +
         len(intelligence.phoneNumbers)
     )
-    
+
     # Add counts from 'other' field if present
     if intelligence.other:
         for items in intelligence.other.values():
@@ -90,7 +92,7 @@ def generate_agent_notes(
     if intelligence.upiIds: intel_summary.append("UPI Endpoints")
     if intelligence.phishingLinks: intel_summary.append("C2 Phishing URLs")
     if intelligence.phoneNumbers: intel_summary.append("Contact Numbers")
-    
+
     # Add summary for 'other' intelligence
     if intelligence.other:
         if intelligence.other.get("shortUrls"): intel_summary.append("Obfuscated URLs")
@@ -189,12 +191,14 @@ def send_final_callback(
         logger.debug(f"Payload: {payload.model_dump_json(indent=2)}")
 
         # Send POST request
+        callback_start = time.time()
         response = requests.post(
             CALLBACK_URL,
             json=payload.model_dump(),
             headers={"Content-Type": "application/json"},
             timeout=3  # PRODUCTION REFINEMENT: Reduced from 10s to 3s
         )
+        callback_time = time.time() - callback_start
 
         # Check response
         response.raise_for_status()
@@ -204,14 +208,25 @@ def send_final_callback(
             f"(Status: {response.status_code})"
         )
 
+        # HACKATHON: Log callback success
+        performance_logger.log_callback(session_id, True, response.status_code, callback_time)
+
         return True
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Callback failed for session {session_id}: {e}")
+
+        # HACKATHON: Log callback failure
+        performance_logger.log_callback(session_id, False, None, 0)
+
         return False
 
     except Exception as e:
         logger.error(f"❌ Unexpected error in callback for session {session_id}: {e}")
+
+        # HACKATHON: Log callback failure
+        performance_logger.log_callback(session_id, False, None, 0)
+
         return False
 
 

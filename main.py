@@ -31,8 +31,10 @@ from test_logger import test_logger  # NEW: Platform test logging
 from guardrails import guardrails  # PRODUCTION REFINEMENT
 from llm_safety import is_llm_available  # PRODUCTION REFINEMENT
 from response_stability_filter import response_stability_filter  # ELITE REFINEMENT
+from performance_logger import performance_logger  # HACKATHON: Track all metrics
 
 # Configure logging
+import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -122,11 +124,13 @@ async def process_message(
     """
 
     try:
+        request_start_time = time.time()
+
         session_id = request.sessionId
         current_message = request.message
         conversation_history = request.conversationHistory
 
-        logger.info(f"Processing message for session {session_id}")
+        logger.info(f"🔵 [HACKATHON] Processing message for session {session_id}, turn {len(conversation_history) + 1}")
 
         # ====================================================================
         # STEP 1: Session Management + State Tracking
@@ -174,6 +178,9 @@ async def process_message(
             found_types = list(set([x.type for x in extracted_list]))
             logger.info(f"Intelligence extracted for {session_id}: {found_types}")
 
+            # HACKATHON: Log extraction
+            performance_logger.log_intelligence_extraction(session_id, total_messages, extracted_list, "CONTINUOUS")
+
         # Backfill extraction every 5 turns (full history scan)
         if msg_index % 5 == 0 and msg_index > 0:
             logger.info(f"Running backfill extraction for {session_id} at turn {msg_index}")
@@ -184,6 +191,9 @@ async def process_message(
             if backfill_intel:
                 session_manager.update_intel_graph(session_id, backfill_intel)
                 logger.info(f"Backfill found {len(backfill_intel)} additional items")
+
+                # HACKATHON: Log backfill extraction
+                performance_logger.log_intelligence_extraction(session_id, total_messages, backfill_intel, "BACKFILL")
 
         # ====================================================================
         # ELITE REFINEMENT 7: Hard Termination Lock (Turn 15 Limit)
@@ -283,6 +293,13 @@ async def process_message(
             logger.info(
                 f"Session {session_id} suspicion score: {session.suspicion_score:.2f}"
             )
+
+            # HACKATHON: Log scam detection
+            if session.suspicion_score >= 0.7 and not session.is_scam:
+                performance_logger.log_scam_detection(
+                    session_id, total_messages, True, session.suspicion_score,
+                    scam_result.get("scam_type", "UNKNOWN")
+                )
 
             # Add suspicious keywords from scam detector (Late Binding)
             if scam_result.get("indicators"):
@@ -570,10 +587,32 @@ async def process_message(
             response_data=response.dict()
         )
 
+        # HACKATHON: Log API response time and session summary if finalized
+        api_response_time = time.time() - request_start_time
+        performance_logger.log_api_request(session_id, total_messages, api_response_time, "success")
+
+        # Log session summary if finalized
+        if session.state == SessionStateEnum.FINALIZED and not hasattr(session, '_summary_logged'):
+            intel_count = sum(len(v) for v in session.intel_graph.values())
+            performance_logger.log_session_summary(session_id, {
+                "total_turns": total_messages,
+                "scam_type": session.scam_type,
+                "intel_count": intel_count,
+                "callback_sent": session.callback_sent,
+                "finalization_trigger": "hard_limit" if total_messages >= 15 else "intelligent"
+            })
+            session._summary_logged = True  # Prevent duplicate logging
+
         return response
 
     except Exception as e:
-        logger.error(f"Error processing message for {session_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error processing message for {session_id}: {e}", exc_info=True)
+
+        # HACKATHON: Log failed API request
+        if 'request_start_time' in locals():
+            api_response_time = time.time() - request_start_time
+            performance_logger.log_api_request(session_id, 0, api_response_time, "error")
+
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
@@ -624,6 +663,24 @@ async def get_stats(api_key: str = Depends(verify_api_key)):
     return {
         "status": "success",
         "statistics": stats
+    }
+
+
+@app.get("/hackathon/performance")
+async def get_performance_stats(api_key: str = Depends(verify_api_key)):
+    """
+    HACKATHON: Get detailed performance statistics from logs
+    Analyzes LLM usage, rule-based fallbacks, extraction rates, etc.
+    """
+    perf_stats = performance_logger.get_session_stats()
+    return {
+        "status": "success",
+        "performance_metrics": perf_stats,
+        "recommendations": {
+            "llm_percentage": f"{perf_stats['llm_usage'] / max(perf_stats['llm_usage'] + perf_stats['rule_based_usage'], 1) * 100:.1f}%",
+            "callback_reliability": f"{perf_stats['callback_success_rate']}%",
+            "avg_intel_per_session": round(perf_stats['total_extractions'] / max(perf_stats['total_sessions'], 1), 2)
+        }
     }
 
 
