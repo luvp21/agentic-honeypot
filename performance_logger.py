@@ -48,6 +48,26 @@ class PerformanceLogger:
         }
         self.perf_logger.info(f"GENERATION: {json.dumps(log_entry)}")
 
+    def log_llm_call(self, module: str, success: bool, response_time_ms: float, error: Optional[str] = None):
+        """
+        Log detailed LLM call metrics
+        
+        Args:
+            module: "generator" | "extractor" | "classifier"
+            success: Whether the call succeeded
+            response_time_ms: Time taken in milliseconds
+            error: Error message if failed
+        """
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event": "LLM_CALL",
+            "module": module,
+            "success": success,
+            "response_time_ms": round(response_time_ms, 2),
+            "error": error
+        }
+        self.perf_logger.info(f"LLM: {json.dumps(log_entry)}")
+
     def log_intelligence_extraction(self, session_id: str, turn: int, extracted: List, method: str = "CONTINUOUS"):
         """
         Log intelligence extraction events

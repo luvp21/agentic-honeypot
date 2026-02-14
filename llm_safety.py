@@ -136,8 +136,16 @@ async def safe_llm_call(
     # Check circuit breaker
     if not breaker.should_allow_llm():
         logger.warning(f"⚠️ [LLM BREAKER] {operation_name} skipped - [{breaker.name}] module disabled")
+        # Log performance metrics
+        try:
+            from performance_logger import performance_logger
+            performance_logger.log_llm_call(breaker.name, False, 0, "circuit_breaker_open")
+        except:
+            pass
         return fallback_value
 
+    start_time = time.time()
+    
     try:
         # ELITE REFINEMENT: Add jitter to spread concurrent load
         jitter = random.uniform(0.01, 0.03)  # 10-30ms
@@ -149,19 +157,47 @@ async def safe_llm_call(
             timeout=timeout
         )
 
+        # Calculate response time
+        response_time_ms = (time.time() - start_time) * 1000
+
         # Record success
         breaker.record_success()
+        
+        # Log performance metrics
+        try:
+            from performance_logger import performance_logger
+            performance_logger.log_llm_call(breaker.name, True, response_time_ms, None)
+        except:
+            pass
 
         return result
 
     except asyncio.TimeoutError:
+        response_time_ms = (time.time() - start_time) * 1000
         logger.warning(f"⏱️ {operation_name} timeout after {timeout}s - using fallback")
         breaker.record_failure()
+        
+        # Log performance metrics
+        try:
+            from performance_logger import performance_logger
+            performance_logger.log_llm_call(breaker.name, False, response_time_ms, "timeout")
+        except:
+            pass
+        
         return fallback_value
 
     except Exception as e:
+        response_time_ms = (time.time() - start_time) * 1000
         logger.error(f"❌ {operation_name} error: {e} - using fallback")
         breaker.record_failure()
+        
+        # Log performance metrics
+        try:
+            from performance_logger import performance_logger
+            performance_logger.log_llm_call(breaker.name, False, response_time_ms, str(e)[:100])
+        except:
+            pass
+        
         return fallback_value
 
 
