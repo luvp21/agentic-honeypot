@@ -409,11 +409,17 @@ class IntelligenceExtractor:
             extracted.append(RawIntel("upi_ids", match.group(1), "strict", 1.0, message_index))
 
         # Generic UPI (fallback) - Must contain '@' and be surrounded by word boundaries
-        if "upi" in full_text.lower() or "pay" in full_text.lower():
+        # Trigger on payment/money context words
+        has_payment_context = any(word in full_text.lower() for word in ["upi", "pay", "send", "transfer", "money", "account", "refund"])
+        if has_payment_context:
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
                 val = match.group(1)
+                # Skip if already extracted
                 if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
+                # Skip common false positives (email-like but not UPI-like)
+                if "@gmail" in val.lower() or "@yahoo" in val.lower() or "@outlook" in val.lower():
+                    continue
                 extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
         # 2.4 Phone Numbers (Enhanced Robust Logic)
