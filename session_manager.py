@@ -257,9 +257,11 @@ class SessionManager:
         missing_count = sum(1 for x in core_critical if not x)
 
         # Only finalize if:
-        # 1. We have ALL 5 core critical types AND reached turn 12+, OR
+        # 1. We have ALL 5 core critical types AND reached turn 14+ (give 2 more turns to collect additional items)
         # 2. We have 4+ types AND reached turn 14 (almost at hard limit)
-        if missing_count == 0 and session.message_count >= 12:
+        # IMPORTANT: Even if we have "all types", there might be MULTIPLE items per type (e.g., 2 UPI IDs)
+        # So we wait a bit longer to give scammer chance to provide more details
+        if missing_count == 0 and session.message_count >= 14:
             logger.info(
                 f"Session {session_id} extracted ALL core intel types at turn {session.message_count}"
             )
