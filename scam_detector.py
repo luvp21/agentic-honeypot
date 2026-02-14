@@ -749,7 +749,8 @@ Be decisive. Do not hedge. No explanations outside JSON.
         pattern_type = "unknown"
 
         # Analyze conversation progression
-        messages = [msg.get("content", "") for msg in conversation_history[-5:]] + [current_message]
+        # conversation_history contains MessageContent objects, not dicts
+        messages = [msg.text if hasattr(msg, 'text') else str(msg) for msg in conversation_history[-5:]] + [current_message]
         messages_lower = [msg.lower() for msg in messages]
 
         # Pattern 1: Trust Building → Financial Request
