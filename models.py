@@ -129,9 +129,7 @@ class ExtractedIntelligence(BaseModel):
     phishingLinks: List[str] = Field(default_factory=list, description="Phishing URLs")
     phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
     suspiciousKeywords: List[str] = Field(default_factory=list, description="Scam indicators")
-    telegramIds: List[str] = Field(default_factory=list, description="Extracted Telegram Usernames")
-    qrMentions: List[str] = Field(default_factory=list, description="References to QR codes")
-    shortUrls: List[str] = Field(default_factory=list, description="Shortened URLs")
+    other: Dict[str, List[str]] = Field(default_factory=dict, description="Other extracted intelligence (telegram IDs, short URLs, QR mentions, etc.)")
 
 
 class FinalCallbackPayload(BaseModel):

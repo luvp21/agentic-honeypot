@@ -27,6 +27,24 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     Returns:
         ExtractedIntelligence model with camelCase fields
     """
+    # Build 'other' dict for additional intelligence types
+    other_intel = {}
+    
+    # Add telegram IDs if present
+    telegram_ids = extracted_data.get("telegram_ids", [])
+    if telegram_ids:
+        other_intel["telegramIds"] = telegram_ids
+    
+    # Add short URLs if present
+    short_urls = extracted_data.get("short_urls", [])
+    if short_urls:
+        other_intel["shortUrls"] = short_urls
+    
+    # Add QR mentions if present
+    qr_mentions = extracted_data.get("qr_mentions", [])
+    if qr_mentions:
+        other_intel["qrMentions"] = qr_mentions
+    
     return ExtractedIntelligence(
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
@@ -34,9 +52,7 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
         phishingLinks=extracted_data.get("phishing_links", []),
         phoneNumbers=extracted_data.get("phone_numbers", []),
         suspiciousKeywords=extracted_data.get("suspicious_keywords", []),
-        telegramIds=extracted_data.get("telegram_ids", []),
-        qrMentions=extracted_data.get("qr_mentions", []),
-        shortUrls=extracted_data.get("short_urls", [])
+        other=other_intel
     )
 
 
@@ -51,15 +67,18 @@ def generate_agent_notes(
     Generate detailed agent notes for evaluation.
     Winner move: Provide deep psychological and tactical insights.
     """
+    # Count primary intelligence fields
     intel_count = (
         len(intelligence.bankAccounts) +
         len(intelligence.upiIds) +
         len(intelligence.phishingLinks) +
-        len(intelligence.phoneNumbers) +
-        len(intelligence.telegramIds) +
-        len(intelligence.qrMentions) +
-        len(intelligence.shortUrls)
+        len(intelligence.phoneNumbers)
     )
+    
+    # Add counts from 'other' field if present
+    if intelligence.other:
+        for items in intelligence.other.values():
+            intel_count += len(items)
 
     # 1. Summary of Attack Vector
     notes = f"SUMMARY: {scam_type.upper()} scam operation targeting elderly persona. "
@@ -71,7 +90,12 @@ def generate_agent_notes(
     if intelligence.upiIds: intel_summary.append("UPI Endpoints")
     if intelligence.phishingLinks: intel_summary.append("C2 Phishing URLs")
     if intelligence.phoneNumbers: intel_summary.append("Contact Numbers")
-    if intelligence.shortUrls: intel_summary.append("Obfuscated URLs")
+    
+    # Add summary for 'other' intelligence
+    if intelligence.other:
+        if intelligence.other.get("shortUrls"): intel_summary.append("Obfuscated URLs")
+        if intelligence.other.get("telegramIds"): intel_summary.append("Telegram Contacts")
+        if intelligence.other.get("qrMentions"): intel_summary.append("QR Codes")
 
     if intel_summary:
         notes += f"Extracted: {', '.join(intel_summary)}. "
