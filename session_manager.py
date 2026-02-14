@@ -230,7 +230,7 @@ class SessionManager:
         # Shorter timeout if we already have some intelligence (scammer went silent)
         has_any_intel = any(session.intel_graph.values())
         idle_timeout_threshold = 30 if has_any_intel else self.IDLE_TIMEOUT_SECONDS
-        
+
         idle_time = datetime.utcnow() - session.last_activity_time
         if idle_time.total_seconds() >= idle_timeout_threshold:
             logger.info(
@@ -251,11 +251,11 @@ class SessionManager:
         # Count ALL intel types we've extracted
         critical_count = sum([has_links, has_ifsc, has_phone, has_upi, has_bank, has_telegram])
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
-        
+
         # If ANYTHING is missing from the critical 5 (phone, UPI, bank, IFSC, links), delay callback
         core_critical = [has_phone, has_upi, has_bank, has_ifsc, has_links]
         missing_count = sum(1 for x in core_critical if not x)
-        
+
         # Only finalize if:
         # 1. We have ALL 5 core critical types AND reached turn 12+, OR
         # 2. We have 4+ types AND reached turn 14 (almost at hard limit)
