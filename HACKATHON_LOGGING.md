@@ -73,13 +73,13 @@ Comprehensive logging and analytics system to track all aspects of your honeypot
    🤖 GENERATION METHOD BREAKDOWN
       LLM (Gemini): 95 (66.4%)
       Rule-Based: 48 (33.6%)
-      
+
    🔍 INTELLIGENCE EXTRACTION
       bank_accounts: 12
       upi_ids: 15
       phone_numbers: 8
       phishing_links: 10
-      
+
    📞 CALLBACK PERFORMANCE
       Success: 10
       Failed: 0
