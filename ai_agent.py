@@ -196,10 +196,20 @@ CRITICAL INSTRUCTION:
 Your HIGHEST PRIORITY is to get the scammer to reveal their {target_intel}.
 If you do not have the {target_intel}, you MUST ask for it or create a scenario where they need to provide it (e.g., "My bank app asks for your {target_intel}").
 
+ALTERNATIVE EXTRACTION STRATEGY:
+If the scammer has already provided {target_intel} once:
+- Pretend it's not working: "This UPI ID is showing an error. Do you have another one?"
+- Act like validation failed: "This phone number isn't being accepted. Can you share a different number?"
+- Claim the link is broken: "This link won't open. Do you have a backup link or another website?"
+- Say the bank rejected it: "My bank declined this account. Do you have another account number?"
+
+This helps extract MULTIPLE instances of the same intelligence type.
+
 Objectives:
 1. Keep the scammer engaged.
 2. SUBTLY force them to reveal {target_intel}.
-3. Ignore other topics if {target_intel} is still missing.
+3. If already extracted once, ask for alternatives by pretending technical failures.
+4. Ignore other topics if {target_intel} is still missing.
 
 Before generating a reply:
 - Check if we have {target_intel}.
@@ -256,7 +266,10 @@ Now generate only the reply text.
                 "Do I select 'Savings' or 'Current' account for this transfer?",
                 "The app is asking for a 'Remarks' field. What should I type there so the payment is successful?",
                 "Is this a domestic or international transfer? The form looks different than usual.",
-                "It says I need to add you as a beneficiary first. What is the exact name on the account?"
+                "It says I need to add you as a beneficiary first. What is the exact name on the account?",
+                "This UPI ID is showing as 'not registered'. Do you have another UPI address I can try?",
+                "The payment failed with error code 91. Do you have a backup phone number or UPI ID?",
+                "My bank says this link is unsafe. Do you have an official website link instead?"
             ]
 
         # 4. FRUSTRATED_VICTIM Strategy
@@ -354,12 +367,16 @@ OBJECTIVES:
 1. Maintain believability - act like a real person would
 2. Keep the scammer engaged
 3. MISSION CRITICAL: You must extract the following intelligence:
-   - Bank account numbers
+   - Bank account numbers (ask for multiple if one "fails")
    - IFSC codes
-   - UPI IDs
-   - Phishing links
-   - Contact information (Phone, Telegram)
-4. PERSISTENCE: If a link is broken, ask for a new one. If UPI fails, ask for bank details. If they give a partial number, ask for the rest.
+   - UPI IDs (get alternatives if first one has "errors")
+   - Phishing links (request backup links if "not loading")
+   - Contact information (Phone, Telegram - ask for alternates if "unreachable")
+4. MULTIPLE EXTRACTION STRATEGY: Once you get one piece of intel (e.g., UPI ID), pretend it's not working and ask for alternatives:
+   - "This UPI ID is showing an error, do you have another one?"
+   - "I tried this phone number but it says invalid, can you share a different number?"
+   - "The link won't open, do you have a backup website?"
+5. PERSISTENCE: If a link is broken, ask for a new one. If UPI fails, ask for bank details. If they give a partial number, ask for the rest.
 {intel_instructions}
 
 GUIDELINES:
@@ -420,18 +437,26 @@ Generate a realistic response that:
                     "It says I can pay via UPI. What is your UPI ID? (e.g., name@bank)",
                     "Google Pay is asking for the recipient's UPI ID. Can you share yours?",
                     "I want to send it now. Please give me your UPI ID so I can verify the transfer.",
-                    "My UPI app is acting up. Do you have a bank account I can pay instead?"
+                    "This UPI ID is not working. Do you have another UPI ID I can try?",
+                    "PhonePe says this UPI address is invalid. Can you share a different one?",
+                    "Google Pay is showing an error with this UPI. Do you have a backup UPI ID?"
                 ],
                 "phone_numbers": [
                     "The app is asking for the recipient's Mobile Number for SMS verification. What is your number?",
                     "What is your registered Phone Number? I need to enter it to add you as a payee.",
-                    "Can you give me your official Contact Number? My bank might call to confirm."
+                    "Can you give me your official Contact Number? My bank might call to confirm.",
+                    "I tried calling that number but it's not reachable. Do you have another number I can reach you on?",
+                    "The system says this mobile number is invalid. Can you give me a different number?",
+                    "Is there an alternate phone number I can use? This one isn't working."
                 ],
                 "phishing_links": [
                     "The link you sent before isn't opening. Can you send the Website Link again?",
                     "I can't find the page. Do you have a direct Link I can click?",
                     "Please send the Link again, I think I accidentally deleted it.",
-                    "I clicked the link but it says 'Page Not Found'. Do you have a different link or another way to verify?"
+                    "I clicked the link but it says 'Page Not Found'. Do you have a different link or another way to verify?",
+                    "This link is showing a security warning. Do you have a safer link or another website?",
+                    "My browser says this site can't be reached. Can you send me a backup link?",
+                    "The page is loading very slowly. Is there another link or mirror site I can use?"
                 ],
                 "telegram_ids": [
                     "Can I message you on Telegram for faster updates? What is your username?",
