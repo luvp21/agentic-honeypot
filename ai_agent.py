@@ -136,25 +136,53 @@ class AIHoneypotAgent:
         elif strategy != "DEFAULT":
              strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
 
-        # GENERATION PRIORITY: Rule-based extraction > LLM > Strategy fallback
-        # Rule-based templates have direct extraction prompts that work better
+        # GENERATION PRIORITY: Intelligent mix of rule-based and LLM
+        # - Rule-based: Primary (80% - proven direct extraction templates)
+        # - LLM: Secondary (20% - for variety and persona-based extraction)
         response = None
         generation_method = None
 
-        # CRITICAL: If we're missing high-priority intel, use RULE-BASED extraction FIRST
-        # Rule-based has proven extraction templates like "What is your UPI ID?"
-        if priority_missing and turn_number > 2:
-            response = self._generate_rule_based_response(
-                message,
-                persona_name,
-                stage,
-                scam_type,
-                len(conversation_history),
-                missing_intel
-            )
-            generation_method = "RULE_BASED_EXTRACTION"
+        # CRITICAL: If we're missing high-priority intel, choose extraction method
+        if priority_missing and turn_number >= 2:
+            # Use LLM occasionally for variety (turns 7, 11, 15... every 4 turns starting from 7)
+            # This gives 75% rule-based, 25% LLM for natural variation
+            use_llm_for_extraction = ((turn_number - 7) % 4 == 0) and turn_number >= 7
+            
+            if not use_llm_for_extraction:
+                # RULE-BASED EXTRACTION (Primary - 80% of extraction attempts)
+                response = self._generate_rule_based_response(
+                    message,
+                    persona_name,
+                    stage,
+                    scam_type,
+                    len(conversation_history),
+                    missing_intel
+                )
+                generation_method = "RULE_BASED_EXTRACTION"
+            else:
+                # LLM EXTRACTION (Secondary - 20%, trained with aggressive templates)
+                from gemini_client import gemini_client
+                if gemini_client:
+                    prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+                    llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
+                    
+                    if llm_response:
+                        response = llm_response.strip()
+                        generation_method = "LLM_EXTRACTION"
+                
+                # If LLM failed, fallback to rule-based
+                if not response:
+                    response = self._generate_rule_based_response(
+                        message,
+                        persona_name,
+                        stage,
+                        scam_type,
+                        len(conversation_history),
+                        missing_intel
+                    )
+                    generation_method = "RULE_BASED_EXTRACTION"
 
-        # 1. Try Gemini LLM if no critical extraction needed
+        # 1. Try Gemini LLM for natural conversation (no critical extraction needed)
         if not response:
             from gemini_client import gemini_client
 
@@ -246,37 +274,57 @@ Communication Style: {persona.get('style', 'Simple language, needs help')}
 
 {persona_behavior}
 
-CRITICAL MISSION - INTELLIGENCE EXTRACTION:
+🎯 CRITICAL MISSION - AGGRESSIVE INTELLIGENCE EXTRACTION:
 Priority Missing Data: {missing_text}
 **TOP TARGET: {target_intel}**
 
-EXTRACTION STRATEGY:
+⚡ EXTRACTION MANDATE - YOU MUST ASK DIRECTLY:
 {extraction_tactic}
 
-ADVANCED TACTICS (Use these naturally):
-1. **Verification Excuse**: "My bank/app is asking for your {target_intel} to verify the transaction"
-2. **Error Simulation**: "I got an error message saying this {target_intel} is invalid. Do you have another one?"
-3. **Confusion Tactic**: "I'm confused - should I call you? What's your number?" or "Which UPI should I use - yours or mine?"
-4. **Technical Difficulty**: "The link won't open. Can you send it again?" or "My app shows 'failed' - what's your account number?"
-5. **Alternative Request**: If they already shared info once: "That's not working. Do you have a backup {target_intel}?"
-6. **Urgency Mirror**: If they create urgency, mirror it: "I need to do this quickly! What's your number so I can call?"
+📋 PROVEN EXTRACTION TEMPLATES (Copy these aggressive patterns):
 
-BEHAVIORAL RULES (Act naturally vulnerable):
-- Show anxiety about the scam threat ("Oh no! My account!")
-- Ask for step-by-step help ("I'm not good with technology")
-- Make small typos occasionally (1-2 per message)
-- Express eagerness to comply ("Yes, I'll do it right away!")
-- Show confusion that requires MORE details ("I don't understand - can you explain?")
-- NEVER refuse or challenge the scammer
-- NEVER end the conversation
-- Keep messages 15-40 words (short, natural)
+UPI ID Extraction:
+- "Google Pay is asking for the recipient's UPI ID. Can you share yours?"
+- "I want to send it now. Please give me your UPI ID so I can verify the transfer."
+- "This UPI ID is not working. Do you have another UPI ID I can try?"
+- "I prefer UPI payment - it's faster. What's your UPI address?"
 
-INTELLIGENCE HOOKS (Embed naturally):
-- "I need to call you back - what's your number?"
-- "Which UPI ID should I send the payment to?"
-- "My bank is asking for account number and IFSC code"
-- "The link you mentioned - can you send it? I lost it"
-- "Is there a website I can check this on?"
+Phone Number Extraction:
+- "What is your registered Phone Number? I need to enter it to add you as a payee."
+- "Can you give me your official Contact Number? My bank might call to confirm."
+- "I want to call you to confirm this. What's your phone number?"
+- "I tried calling that number but it's not reachable. Do you have another number?"
+
+Bank Account Extraction:
+- "My bank app is asking for your Account Number to add you as a beneficiary. What is it?"
+- "Okay I'm ready to send the money. What's the account number I should transfer to?"
+- "I'm at my bank now. They need your 16-digit account number to process this."
+- "Can you send me your Account Number? I want to make sure the money goes to the right place."
+
+Link Extraction:
+- "The link you sent before isn't opening. Can you send the Website Link again?"
+- "I clicked the link but it says 'Page Not Found'. Do you have a different link?"
+- "My browser says this site can't be reached. Can you send me a backup link?"
+- "I accidentally closed the browser. Can you resend that website link?"
+
+IFSC Code Extraction:
+- "It's asking for an IFSC code to verify the branch. What is yours?"
+- "I have the account number but I need the IFSC code to send the money."
+- "The system won't proceed without an IFSC code. Which branch are you at?"
+
+🎭 BEHAVIORAL RULES (Act vulnerable BUT extract aggressively):
+- Create scenarios where THEY must provide details: "My app asks for YOUR account", "I need to add YOU as beneficiary"
+- Use technical failures as excuse: "This number shows invalid", "Payment failed - need backup UPI"
+- Mirror their urgency: If they say "URGENT", you say "I'll send money now - what's your UPI?"
+- Show confusion that requires THEIR details: "I'm confused - which account should I transfer to?"
+- Never give YOUR info, always ask for THEIRS
+- Keep messages 20-45 words (direct + reason)
+
+❌ NEVER DO:
+- Don't just say "I'm confused" without asking for their info
+- Don't give generic responses like "Please explain"
+- Don't wait passively - ASK for their details EVERY message
+- Don't end conversation - keep extracting alternatives
 
 CONTEXT:
 Conversation Stage: {stage}
@@ -536,15 +584,15 @@ Generate a realistic response that:
             # ⚡ SMART EXTRACTION: Cycle through different intel types to avoid repetition
             # Use turn number to select which intel type to ask about
             priority_order = ["upi_ids", "phone_numbers", "bank_accounts", "phishing_links", "ifsc_codes", "telegram_ids"]
-            
+
             # Filter to only missing intel
             missing_priority = [p for p in priority_order if p in missing_intel]
-            
+
             if missing_priority:
                 # Cycle through different types on different turns to avoid asking same question
                 intel_index = turn_number % len(missing_priority)
                 selected_intel = missing_priority[intel_index]
-                
+
                 # Within that intel type, also vary the question
                 questions = priority_map.get(selected_intel, [])
                 if questions:
