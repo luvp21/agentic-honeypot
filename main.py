@@ -648,6 +648,58 @@ async def get_session_debug(session_id: str, api_key: str = Depends(verify_api_k
     }
 
 
+@app.get("/check-idle-sessions")
+async def check_idle_sessions(api_key: str = Depends(verify_api_key)):
+    """
+    BACKGROUND CHECK: Check all sessions for idle timeout and send callbacks if needed.
+    This endpoint should be called periodically (e.g., every 30s) by external cron/scheduler.
+    """
+    from callback import send_callback_with_retry
+    
+    finalized_count = 0
+    callback_sent_count = 0
+    
+    # Check all active sessions
+    for session_id, session in session_manager.sessions.items():
+        # Skip if already sent callback or not a scam
+        if session.callback_sent or not session.is_scam:
+            continue
+            
+        # Check if should be finalized due to idle timeout
+        if session_manager.is_finalized(session_id):
+            # Transition to FINALIZED state
+            if session.state != SessionStateEnum.FINALIZED:
+                session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
+                finalized_count += 1
+                logger.info(f"🏁 Session {session_id} auto-finalized due to idle timeout")
+            
+            # Check if callback should be sent
+            callback_status = session_manager.should_send_callback(session_id, session.message_count - 1)
+            if callback_status["send"]:
+                # Send callback
+                callback_success = send_callback_with_retry(
+                    session_id=session_id,
+                    scam_detected=session.is_scam,
+                    total_messages=session.message_count,
+                    extracted_intelligence=session.extracted_intelligence,
+                    scam_type=session.scam_type,
+                    scammer_profile=session.scammer_profile,
+                    max_retries=3,
+                    status=callback_status["type"]
+                )
+                
+                if callback_success:
+                    session_manager.mark_callback_sent(session_id, callback_status["type"])
+                    callback_sent_count += 1
+                    logger.info(f"✅ Idle timeout callback sent for {session_id}")
+    
+    return {
+        "status": "success",
+        "finalized": finalized_count,
+        "callbacks_sent": callback_sent_count
+    }
+
+
 # ============================================================================
 # APPLICATION STARTUP
 # ============================================================================

@@ -226,11 +226,16 @@ class SessionManager:
             )
             return True
 
-        # Criterion D: Idle timeout
+        # Criterion D: Idle timeout - if scammer stops replying, finalize with whatever intel we have
+        # Shorter timeout if we already have some intelligence (scammer went silent)
+        has_any_intel = any(session.intel_graph.values())
+        idle_timeout_threshold = 30 if has_any_intel else self.IDLE_TIMEOUT_SECONDS
+        
         idle_time = datetime.utcnow() - session.last_activity_time
-        if idle_time.total_seconds() >= self.IDLE_TIMEOUT_SECONDS:
+        if idle_time.total_seconds() >= idle_timeout_threshold:
             logger.info(
-                f"Session {session_id} exceeded idle timeout: {idle_time.total_seconds()}s"
+                f"Session {session_id} exceeded idle timeout: {idle_time.total_seconds()}s "
+                f"(threshold: {idle_timeout_threshold}s, has_intel: {has_any_intel})"
             )
             return True
 
