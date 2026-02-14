@@ -7,7 +7,10 @@ __pycache__/
 .git/
 .gitignore
 *.md
-test*.py
+test_suite.py
+test_extraction_suite.py
+test_gemini_integration.py
+test_upgrades_output.txt
 debug*.py
 reproduce_bug.py
 older/
