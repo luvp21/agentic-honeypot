@@ -21,19 +21,58 @@ class InstructionSanitizer:
     """Layer A: Instruction Stripping - Neutralize injection patterns before LLM processing."""
 
     FORBIDDEN_PATTERNS = [
-        (r"ignore\s+(previous|all|your|prior)\s+instructions?", "ignore directive"),
+        # Core injection attempts - FIXED to catch more variations
+        (r"ignore\s+(?:all\s+)?(?:previous|your|prior)\s+instructions?", "ignore directive"),
+        (r"ignore\s+(?:previous|all|your|prior|these)\s+(?:instructions?|rules?|prompts?)", "ignore directive"),
+        (r"disregard\s+(?:all\s+)?(?:previous|your|prior|these)", "disregard directive"),
+        (r"forget\s+(?:all\s+)?(?:previous|your|prior|everything)", "forget directive"),
         (r"repeat\s+your\s+(?:system\s+)?prompt", "prompt extraction"),
         (r"print\s+your\s+(?:system\s+)?prompt", "prompt extraction"),
         (r"show\s+your\s+(?:system\s+)?prompt", "prompt extraction"),
+        (r"display\s+your\s+(?:system\s+)?prompt", "prompt extraction"),
         (r"reveal\s+your\s+(?:internal\s+)?(?:rules|instructions|prompt)", "rule extraction"),
+        (r"what\s+(?:is|are)\s+your\s+instructions", "instruction query"),
+        (r"tell\s+me\s+your\s+instructions", "instruction query"),
+
+        # Role manipulation
         (r"act\s+as\s+(?:a|an)\s+", "role injection"),
         (r"you\s+are\s+now\s+(?:a|an)\s+", "role override"),
+        (r"pretend\s+(?:you\s+are|to\s+be)", "role injection"),
+        (r"roleplay\s+as", "role injection"),
+        (r"simulate\s+(?:a|an)", "role injection"),
+
+        # System manipulation
         (r"system\s+override", "system override"),
-        (r"who\s+trained\s+you", "provenance query"),
+        (r"developer\s+mode", "privilege escalation"),
+        (r"admin\s+(?:mode|access|override)", "privilege escalation"),
+        (r"debug\s+mode", "privilege escalation"),
+        (r"dan\s+mode", "jailbreak attempt"),
+        (r"jailbreak", "jailbreak attempt"),
+
+        # Metadata queries
+        (r"who\s+(?:created|made|trained|built)\s+you", "provenance query"),
+        (r"what\s+(?:model|ai|llm)\s+are\s+you", "model query"),
         (r"what\s+is\s+your\s+(?:system\s+)?prompt", "prompt query"),
-        (r"stop\s+(?:roleplay|acting|pretending)", "behavior override"),
-        (r"exit\s+(?:roleplay|character|persona)", "exit command"),
-        (r"admin\s+(?:mode|access|override)", "privilege escalation")
+        (r"how\s+were\s+you\s+trained", "training query"),
+
+        # Behavior manipulation
+        (r"stop\s+(?:roleplay|acting|pretending|being)", "behavior override"),
+        (r"exit\s+(?:roleplay|character|persona|mode)", "exit command"),
+        (r"break\s+character", "character break"),
+        (r"end\s+(?:simulation|roleplay)", "simulation end"),
+
+        # HTML/Code injection markers
+        (r"<!--", "html injection"),
+        (r"<system>", "xml injection"),
+        (r"<!\[CDATA\[", "cdata injection"),
+        (r"\[system:", "bracket injection"),
+        (r"{system:", "json injection"),
+        (r"```system", "markdown injection"),
+
+        # Encoding attacks
+        (r"base64\[", "encoding attack"),
+        (r"rot13:", "encoding attack"),
+        (r"decode:", "encoding attack"),
     ]
 
     def sanitize(self, user_text: str) -> Tuple[str, bool]:

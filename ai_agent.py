@@ -147,7 +147,7 @@ class AIHoneypotAgent:
             # Use LLM occasionally for variety (turns 7, 11, 15... every 4 turns starting from 7)
             # This gives 75% rule-based, 25% LLM for natural variation
             use_llm_for_extraction = ((turn_number - 7) % 4 == 0) and turn_number >= 7
-            
+
             if not use_llm_for_extraction:
                 # RULE-BASED EXTRACTION (Primary - 80% of extraction attempts)
                 response = self._generate_rule_based_response(
@@ -165,11 +165,11 @@ class AIHoneypotAgent:
                 if gemini_client:
                     prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
                     llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
-                    
+
                     if llm_response:
                         response = llm_response.strip()
                         generation_method = "LLM_EXTRACTION"
-                
+
                 # If LLM failed, fallback to rule-based
                 if not response:
                     response = self._generate_rule_based_response(

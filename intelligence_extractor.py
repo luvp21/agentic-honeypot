@@ -380,6 +380,19 @@ class IntelligenceExtractor:
             if re.match(r'^[6-9]\d{9}$', value): continue
             extracted.append(RawIntel("bank_accounts", value, "context", 1.0, message_index))
 
+        # 2.1b Standalone Bank Accounts (13+ digits, not starting with 6-9 or just standalone numbers in money context)
+        standalone_bank_pattern = r'\b([0-9]{13,18})\b'
+        for match in re.finditer(standalone_bank_pattern, text):
+            value = match.group(1)
+            # Skip if already extracted
+            if any(x.value == value and x.type == "bank_accounts" for x in extracted): continue
+            # Skip if looks like phone number (10 digits starting with 6-9)
+            if re.match(r'^[6-9]\d{9}$', value): continue
+            # Check for money context (send, wire, transfer, bail, fine, payment, western union, etc.)
+            has_money_context = bool(re.search(r'(?i)(send|wire|transfer|bail|fine|pay|money|account|bank|refund|claim|western\s*union|moneygram|fee|prize|won|invest)', text))
+            if has_money_context or len(value) >= 14:
+                extracted.append(RawIntel("bank_accounts", value, "context" if has_money_context else "loose", 1.0 if has_money_context else 0.7, message_index))
+
         # 2.2 IFSC Codes
         ifsc_pattern = r'(?i)\b([a-z]{4}0[a-z0-9]{6})\b'
         for match in re.finditer(ifsc_pattern, text):

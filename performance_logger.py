@@ -51,7 +51,7 @@ class PerformanceLogger:
     def log_llm_call(self, module: str, success: bool, response_time_ms: float, error: Optional[str] = None):
         """
         Log detailed LLM call metrics
-        
+
         Args:
             module: "generator" | "extractor" | "classifier"
             success: Whether the call succeeded

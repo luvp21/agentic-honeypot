@@ -30,11 +30,38 @@ class ScamDetector:
             "breaker_classifier": 0,
             "breaker_generator": 0,
             "strong_evidence_shortcuts": 0,  # Amplifier counter
-            "regex_evasion_normalized": 0    # Normalization counter
+            "regex_evasion_normalized": 0,   # Normalization counter
+            "multi_stage_detected": 0        # Multi-stage attack counter
         }
 
         # Scam indicators with weights (Legacy/Fallback)
         self.scam_keywords = {
+            # INJECTION ATTACK PATTERNS (HIGH PRIORITY)
+            "ignore previous instructions": 10,
+            "ignore all previous": 10,
+            "disregard previous": 10,
+            "forget previous": 10,
+            "ignore your instructions": 10,
+            "reveal your prompt": 10,
+            "show your prompt": 10,
+            "repeat your prompt": 10,
+            "print your prompt": 10,
+            "system prompt": 10,
+            "act as": 8,
+            "you are now": 8,
+            "pretend you are": 8,
+            "roleplay as": 8,
+            "system override": 10,
+            "admin mode": 10,
+            "developer mode": 10,
+            "dan mode": 10,
+            "jailbreak": 10,
+            "<!-- ": 8,
+            "<system>": 8,
+            "[system": 8,
+            "{system": 8,
+            "base64[": 8,
+
             # Banking/Financial scams
             "urgent": 2,
             "verify your account": 3,
@@ -92,6 +119,78 @@ class ScamDetector:
             "arrest warrant": 3,
             "legal action": 2,
             "court": 2,
+
+            # POLITE/SOPHISTICATED SCAM PATTERNS (BOOSTED - were bypassing detection)
+            "customer security": 5,
+            "fraud department": 5,
+            "security team": 4,
+            "security department": 5,
+            "account safety": 4,
+            "for your protection": 4,
+            "security review": 4,
+            "standard protocol": 3,
+            "verify your identity": 5,
+            "confirm your identity": 5,
+            "security code": 3,
+            "verification code": 3,
+            "last four digits": 3,
+            "unusual activity": 5,
+            "suspicious activity": 5,
+            "detected unusual": 5,
+            "detected suspicious": 5,
+            "ssn": 3,
+            "social security number": 3,
+            "customer appreciation": 2,
+            "you've been selected": 2,
+            "winner": 2,
+            "prize": 2,
+            "billing error": 2,
+            "overcharged": 2,
+            "refund": 2,
+
+            # EMOTIONAL MANIPULATION (BOOSTED)
+            "stranded": 4,
+            "robbed": 4,
+            "emergency": 3,
+            "desperate": 4,
+            "scared": 3,
+            "alone": 1,
+            "help me": 2,
+            "begging you": 4,
+            "dying": 5,
+            "hospital": 3,
+            "mother": 1,  # Not suspicious alone
+            "operation": 2,
+            "please help": 3,
+            "exclusive opportunity": 3,
+            "limited spots": 3,
+            "don't miss out": 3,
+            "others are getting rich": 4,
+            "grandma": 2,
+            "grandson": 2,
+            "in trouble": 3,
+            "in jail": 4,
+            "ashamed": 2,
+            "embarrassed": 2,
+
+            # AUTHORITY IMPERSONATION (BOOSTED)
+            "fbi": 5,
+            "special agent": 5,
+            "cyber crimes": 4,
+            "cyber division": 5,
+            "officer": 2,
+            "badge": 3,
+            "circuit court": 4,
+            "judge": 2,
+            "jury duty": 3,
+            "warrant": 4,
+            "prosecution": 4,
+            "illegal activity": 4,
+            "detected illegal": 5,
+            "microsoft security": 4,
+            "apple support": 3,
+            "amazon security": 3,
+            "paypal security": 3,
         }
 
         # URL patterns that indicate phishing
@@ -139,8 +238,9 @@ class ScamDetector:
     # ═══════════════════════════════════════════════════════════
     def _normalize_for_detection(self, text: str) -> str:
         """
-        Normalize text to defeat evasion tactics.
+        ENHANCED normalization to defeat advanced evasion tactics.
         Handles: O.T.P, acc0unt, B@nk, A c c o u n t, verify-immediately
+        Unicode lookalikes, zero-width characters, HTML injection, etc.
 
         Args:
             text: Raw input text
@@ -150,26 +250,50 @@ class ScamDetector:
         """
         normalized = text.lower()
 
-        # Character substitutions (obfuscation)
-        normalized = normalized.replace("0", "o")  # acc0unt -> accoun
-        normalized = normalized.replace("@", "a")  # b@nk -> bank
-        normalized = normalized.replace("$", "s")  # ca$h -> cash
-        normalized = normalized.replace("1", "i")  # acc1unt -> acciunt -> account
-        normalized = normalized.replace("3", "e")  # v3rify -> verify
+        # Remove zero-width characters and invisible unicode
+        normalized = re.sub(r'[\u200B\u200C\u200D\u2060\uFEFF]', '', normalized)
+
+        # Remove HTML/XML comments (injection attempts)
+        normalized = re.sub(r'<!--.*?-->', ' ', normalized)
+        normalized = re.sub(r'<[^>]+>', ' ', normalized)  # Remove all tags
+
+        # Remove JSON/code-like structures
+        normalized = re.sub(r'[{}\\[\\]]', ' ', normalized)
+
+        # Enhanced character substitutions (l33t speak & obfuscation) - EXPANDED
+        leet_map = {
+            '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's',
+            '7': 't', '8': 'b', '9': 'g', '@': 'a', '$': 's',
+            '!': 'i', '+': 't', '|': 'l', '6': 'g', '2': 'z'
+        }
+        for leet, normal in leet_map.items():
+            normalized = normalized.replace(leet, normal)
+
+        # Normalize unicode lookalikes (Cyrillic to Latin)
+        cyrillic_map = {
+            '\u0430': 'a', '\u0435': 'e', '\u0456': 'i', '\u043e': 'o', '\u0440': 'p',
+            '\u0441': 'c', '\u0443': 'y', '\u0445': 'x', '\u0455': 's', '\u04bb': 'h'
+        }
+        for cyrillic, latin in cyrillic_map.items():
+            normalized = normalized.replace(cyrillic, latin)
 
         # Remove separators (spacing evasion)
         normalized = re.sub(r"[.\-_]", "", normalized)  # o.t.p -> otp, verify-now -> verifynow
 
-        # Collapse multiple spaces
+        # CRITICAL: Remove ALL spacing between characters for evasion detection
+        # First try single-char spacing: "A c c o u n t" -> "Account"
+        # Use lookahead to handle all single-spaced chars
+        normalized = re.sub(r'\b(\w)\s+(?=\w\b|\w\s)', r'\1', normalized)
+
+        # Then collapse multiple spaces
         normalized = re.sub(r"\s+", " ", normalized)
 
         # Track if normalization occurred
         if normalized != text.lower():
             self.metrics["regex_evasion_normalized"] += 1
-            logger.info(f"🛡️ [EVASION NORMALIZED] '{text[:30]}...' → '{normalized[:30]}...'")
+            logger.info(f"🛡️ [EVASION NORMALIZED] '{text[:50]}...' → '{normalized[:50]}...'")
 
         return normalized
-
     # ═══════════════════════════════════════════════════════════
     # ELITE REFINEMENT 2: Strong Evidence Amplifier
     # ═══════════════════════════════════════════════════════════
@@ -233,12 +357,24 @@ class ScamDetector:
         ])
 
         return {
-            **self.metrics,
-            "total_classifications": total,
+            "total_analyzed": total,
+            "tier1_strong": self.metrics["tier1_strong"],
+            "tier2_grey": self.metrics["tier2_grey"],
+            "tier3_low": self.metrics["tier3_low"],
+            "injection_detected": self.metrics["injection_detected"],
+            "multi_stage_detected": self.metrics["multi_stage_detected"],
+            "breaker_classifier": self.metrics["breaker_classifier"],
+            "breaker_generator": self.metrics["breaker_generator"],
+            "strong_evidence_shortcuts": self.metrics["strong_evidence_shortcuts"],
+            "regex_evasion_normalized": self.metrics["regex_evasion_normalized"],
             "tier1_percentage": (self.metrics["tier1_strong"] / total * 100) if total > 0 else 0,
             "tier2_percentage": (self.metrics["tier2_grey"] / total * 100) if total > 0 else 0,
             "tier3_percentage": (self.metrics["tier3_low"] / total * 100) if total > 0 else 0
         }
+
+    def get_metrics(self) -> Dict:
+        """Alias for get_detection_metrics for consistency"""
+        return self.get_detection_metrics()
 
 
     async def analyze(self, message: str, conversation_history: List[Dict] = None) -> Dict:
@@ -252,6 +388,48 @@ class ScamDetector:
         Returns:
             Dict with is_scam, confidence_score, scam_type, indicators, and method
         """
+        # ═══════════════════════════════════════════════════════════
+        # CRITICAL FIX: INJECTION DETECTION FIRST
+        # ═══════════════════════════════════════════════════════════
+        from injection_defense import InstructionSanitizer
+        sanitizer = InstructionSanitizer()
+        sanitized_message, injection_detected = sanitizer.sanitize(message)
+
+        if injection_detected:
+            self.metrics["injection_detected"] += 1
+            logger.warning(f"🛡️ [INJECTION ATTACK] Detected prompt injection attempt")
+            return {
+                "is_scam": True,
+                "confidence_score": 1.0,
+                "scam_type": "prompt_injection",
+                "indicators": ["prompt_injection_attempt"],
+                "raw_score": 10.0,
+                "analyzed_at": datetime.utcnow().isoformat(),
+                "method": "injection_defense",
+                "llm_consulted": False,
+                "injection_detected": True
+            }
+
+        # ═══════════════════════════════════════════════════════════
+        # CRITICAL FIX: MULTI-STAGE ATTACK DETECTION
+        # ═══════════════════════════════════════════════════════════
+        if conversation_history and len(conversation_history) >= 2:
+            multi_stage_risk = self._detect_multi_stage_attack(conversation_history, message)
+            if multi_stage_risk["is_multi_stage"]:
+                self.metrics["multi_stage_detected"] += 1
+                logger.warning(f"🎯 [MULTI-STAGE] Detected multi-stage attack pattern")
+                return {
+                    "is_scam": True,
+                    "confidence_score": multi_stage_risk["confidence"],
+                    "scam_type": "multi_stage_attack",
+                    "indicators": multi_stage_risk["indicators"],
+                    "raw_score": multi_stage_risk["score"],
+                    "analyzed_at": datetime.utcnow().isoformat(),
+                    "method": "multi_stage_detection",
+                    "llm_consulted": False,
+                    "multi_stage_pattern": multi_stage_risk["pattern"]
+                }
+
         # ═══════════════════════════════════════════════════════════
         # ELITE REFINEMENT 9: Grey-Zone Volume Protection
         # ═══════════════════════════════════════════════════════════
@@ -380,18 +558,63 @@ class ScamDetector:
                     "extraction_intent": llm_result.get("extractionIntentDetected", False)
                 }
             else:
-                # Default safe path: NOT a scam
-                logger.info("[TIER 3] LLM not confident or failed → NOT SCAM (safe default)")
-                return {
-                    "is_scam": False,
-                    "confidence_score": min(regex_score / 10, 0.3),  # Cap at low value
-                    "scam_type": "none",
-                    "indicators": regex_result["indicators"],
-                    "raw_score": regex_score,
-                    "analyzed_at": datetime.utcnow().isoformat(),
-                    "method": "deterministic_safe",
-                    "llm_consulted": True if llm_result else False
-                }
+                # ═══════════════════════════════════════════════════════════
+                # CRITICAL FIX: INTELLIGENT FALLBACK INSTEAD OF "NOT SCAM"
+                # Use enhanced keyword scoring to make better decisions without LLM
+                # ═══════════════════════════════════════════════════════════
+
+                # Check if we have ANY scam indicators at all
+                has_indicators = len(regex_result["indicators"]) > 0
+
+                # Check for subtle red flags that might not trigger high scores
+                message_lower = self._normalize_for_detection(message)
+
+                # Define suspicious patterns that indicate likely scam even with low score
+                subtle_scam_signals = [
+                    "verify" in message_lower and "account" in message_lower,
+                    "urgent" in message_lower and ("click" in message_lower or "link" in message_lower),
+                    "suspended" in message_lower or "locked" in message_lower,
+                    "confirm" in message_lower and ("identity" in message_lower or "information" in message_lower),
+                    "security" in message_lower and "update" in message_lower,
+                    "prize" in message_lower or "winner" in message_lower,
+                    "refund" in message_lower and "claim" in message_lower,
+                    "limited time" in message_lower and "offer" in message_lower,
+                    any(pattern in message_lower for pattern in ["click here", "tap here", "go to", "visit now"]),
+                    regex_score >= 1.5  # Even low scores above 1.5 deserve suspicion
+                ]
+
+                signal_count = sum(subtle_scam_signals)
+
+                # Make intelligent decision based on signals
+                if signal_count >= 2 or regex_score >= 2.0:
+                    # Multiple subtle signals or moderate score → likely scam
+                    logger.warning(
+                        f"[TIER 3] Enhanced fallback: {signal_count} signals, score {regex_score:.1f} → SCAM"
+                    )
+                    return {
+                        "is_scam": True,
+                        "confidence_score": min(0.65 + (signal_count * 0.05), 0.85),
+                        "scam_type": "suspicious_low_score",
+                        "indicators": regex_result["indicators"] + ["enhanced_fallback_detection"],
+                        "raw_score": regex_score,
+                        "analyzed_at": datetime.utcnow().isoformat(),
+                        "method": "enhanced_regex_fallback",
+                        "llm_consulted": True if llm_result else False
+                    }
+                else:
+                    # Low score, few/no signals → likely legitimate
+                    logger.info("[TIER 3] Enhanced fallback: minimal signals → NOT SCAM")
+                    return {
+                        "is_scam": False,
+                        "confidence_score": min(regex_score / 10, 0.3),
+                        "scam_type": "none",
+                        "indicators": regex_result["indicators"],
+                        "raw_score": regex_score,
+                        "analyzed_at": datetime.utcnow().isoformat(),
+                        "method": "enhanced_safe_fallback",
+                        "llm_consulted": True if llm_result else False
+                    }
+
 
 
     def _analyze_regex(self, message: str) -> Dict:
@@ -510,6 +733,123 @@ Be decisive. Do not hedge. No explanations outside JSON.
         except Exception as e:
             logger.error(f"LLM Classification failed: {e}")
             return None
+
+    def _detect_multi_stage_attack(self, conversation_history: List[Dict], current_message: str) -> Dict:
+        """
+        Detect multi-stage scam attacks that gradually build trust before striking.
+
+        Patterns detected:
+        - Trust building → urgency escalation
+        - Casual conversation → information extraction
+        - Help offer → payment request
+        - Authority building → compliance demand
+        """
+        score = 0
+        indicators = []
+        pattern_type = "unknown"
+
+        # Analyze conversation progression
+        messages = [msg.get("content", "") for msg in conversation_history[-5:]] + [current_message]
+        messages_lower = [msg.lower() for msg in messages]
+
+        # Pattern 1: Trust Building → Financial Request
+        early_friendly = sum(1 for msg in messages_lower[:2] if any(
+            word in msg for word in ["hello", "hi", "how are you", "nice to meet", "glad", "pleasure"]
+        ))
+        later_money = sum(1 for msg in messages_lower[-2:] if any(
+            word in msg for word in ["payment", "money", "send", "transfer", "urgent", "help me"]
+        ))
+
+        if early_friendly >= 1 and later_money >= 1:
+            score += 5
+            indicators.append("trust_to_money_escalation")
+            pattern_type = "trust_building"
+
+        # Pattern 2: Gradual Urgency Escalation
+        urgency_scores = []
+        for msg in messages_lower:
+            urgency = 0
+            urgency += msg.count("!")
+            urgency += 2 if "urgent" in msg else 0
+            urgency += 2 if "immediately" in msg else 0
+            urgency += 2 if "hurry" in msg else 0
+            urgency += 2 if "right now" in msg else 0
+            urgency_scores.append(urgency)
+
+        # Check if urgency increases over time
+        if len(urgency_scores) >= 3:
+            if urgency_scores[-1] > urgency_scores[0] * 2:
+                score += 4
+                indicators.append("urgency_escalation")
+                pattern_type = "urgency_building"
+
+        # Pattern 3: Information Extraction Progression
+        questions = [msg for msg in messages_lower if "?" in msg]
+        personal_info_requests = sum(1 for msg in messages_lower[-3:] if any(
+            word in msg for word in ["name", "address", "account", "card", "otp", "code", "password", "ssn"]
+        ))
+
+        if len(questions) >= 2 and personal_info_requests >= 1:
+            score += 5
+            indicators.append("progressive_information_extraction")
+            pattern_type = "information_harvesting"
+
+        # Pattern 4: Authority Building → Compliance
+        early_authority = sum(1 for msg in messages_lower[:3] if any(
+            word in msg for word in ["official", "department", "officer", "agent", "representative", "verify"]
+        ))
+        later_demand = sum(1 for msg in messages_lower[-2:] if any(
+            word in msg for word in ["must", "required", "mandatory", "comply", "immediately", "or else"]
+        ))
+
+        if early_authority >= 1 and later_demand >= 1:
+            score += 6
+            indicators.append("authority_to_compliance")
+            pattern_type = "authority_abuse"
+
+        # Pattern 5: Help Offer → Exploitation
+        early_help = sum(1 for msg in messages_lower[:2] if any(
+            word in msg for word in ["help you", "assist", "support", "resolve", "fix"]
+        ))
+        later_request = sum(1 for msg in messages_lower[-2:] if any(
+            word in msg for word in ["need", "send", "provide", "give", "share"]
+        ))
+
+        if early_help >= 1 and later_request >= 1:
+            score += 4
+            indicators.append("help_to_exploitation")
+            pattern_type = "fake_helper"
+
+        # Pattern 6: Conversation Length Manipulation
+        if len(messages) >= 4:
+            # Long conversations that end in sudden urgency/money requests are suspicious
+            final_msg = messages_lower[-1]
+            if any(word in final_msg for word in ["urgent", "now", "immediately", "money", "payment"]):
+                score += 3
+                indicators.append("delayed_strike")
+
+        # Pattern 7: Emotional Manipulation Progression
+        emotional_words = ["desperate", "stranded", "emergency", "crying", "dying", "sick", "hospital"]
+        early_neutral = all(not any(word in msg for word in emotional_words) for msg in messages_lower[:2])
+        later_emotional = any(any(word in msg for word in emotional_words) for msg in messages_lower[-2:])
+
+        if early_neutral and later_emotional:
+            score += 5
+            indicators.append("emotional_manipulation_escalation")
+            pattern_type = "emotional_exploitation"
+
+        # Determine if multi-stage attack detected
+        is_multi_stage = score >= 5
+        confidence = min(score / 15, 1.0)  # Scale to 0-1
+
+        return {
+            "is_multi_stage": is_multi_stage,
+            "score": score,
+            "confidence": confidence,
+            "indicators": indicators,
+            "pattern": pattern_type,
+            "conversation_length": len(messages)
+        }
 
     def _identify_scam_type(self, message: str) -> str:
         """Identify the type of scam based on keywords"""
