@@ -24,7 +24,7 @@ class GeminiClient:
     def __init__(self):
         # LEADERBOARD OPTIMIZATION: Low-variance configuration
         self.model = genai.GenerativeModel(
-            "models/gemini-flash-latest",
+            "models/gemini-2.5-flash",  # Updated to valid model name
             generation_config={
                 "temperature": 0.2,  # Minimize variance for reproducibility
                 "max_output_tokens": 500,  # Constrain length
