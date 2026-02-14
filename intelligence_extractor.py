@@ -4,7 +4,300 @@ Intelligence extraction with context-aware patterns for accurate identification.
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Set
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INDIAN PHONE NUMBER EXTRACTION MODULE
+# ═══════════════════════════════════════════════════════════════════════════
+# Deterministic extraction of Indian mobile numbers with normalization.
+# Supports multiple formats: +91, 0 prefix, various separators (space, hyphen, dot).
+# Uses negative lookbehind/lookahead to prevent partial matches from longer digit sequences.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Precompiled regex for Indian phone numbers
+# Pattern explanation:
+# - (?<!\d): Negative lookbehind - ensures we don't match digits that are part of a longer number
+# - (?:\+91[\s.-]*|91[\s.-]*|0)?: Optional group for:
+#   - Country code with + (+91)
+#   - Country code without + (91)
+#   - Trunk prefix (0)
+#   All with flexible separators (space, hyphen, dot)
+# - [6-9]: First digit must be 6-9 (valid Indian mobile number range)
+# - (?:[\s.-]*\d){9}: Nine more digits with optional separators (space, hyphen, dot) between them
+# - (?!\d): Negative lookahead - ensures we don't match if followed by more digits
+INDIAN_PHONE_REGEX = re.compile(
+    r'(?<!\d)(?:\+91[\s.-]*|91[\s.-]*|0)?[6-9](?:[\s.-]*\d){9}(?!\d)',
+    re.IGNORECASE
+)
+
+def extract_indian_phone_numbers(text: str) -> List[str]:
+    """
+    Extract and normalize Indian phone numbers from text.
+
+    This is a deterministic, regex-based extraction function that:
+    - Finds Indian mobile numbers in various formats
+    - Normalizes them to clean 10-digit format (no prefix, no separators)
+    - Returns only unique numbers
+    - Does NOT use AI/LLM inference
+
+    Args:
+        text: Input text to extract phone numbers from
+
+    Returns:
+        List of unique normalized phone numbers (10 digits each, as strings)
+
+    Supported formats:
+        - 9876543210
+        - +919876543210
+        - +91 9876543210
+        - +91-9876543210
+        - +91 98765 43210
+        - +91-98765-43210
+        - 09876543210
+        - 98765 43210
+        - 9876 543 210
+        - 98765.43210
+        - 98765-43210
+        - 98765 - 43210
+        - 9 8 7 6 5 4 3 2 1 0
+        - +91  98765--43210
+        - 919876543210 (without +)
+
+    Example:
+        >>> extract_indian_phone_numbers("Call me at +91-9876543210")
+        ['9876543210']
+        >>> extract_indian_phone_numbers("Contact: 98765 43210 or +91 8765432109")
+        ['9876543210', '8765432109']
+    """
+    if not text:
+        return []
+
+    # Find all matches using precompiled regex
+    matches = INDIAN_PHONE_REGEX.findall(text)
+
+    # Normalize and deduplicate
+    normalized_numbers: Set[str] = set()
+
+    for match in matches:
+        # Remove all non-digit characters
+        digits_only = re.sub(r'\D', '', match)
+
+        # Handle different prefix scenarios:
+        # - If starts with 91 and has 12 digits total (919876543210), strip the 91
+        # - If starts with 0 and has 11 digits total (09876543210), strip the 0
+        # - Otherwise, it should already be 10 digits
+
+        if len(digits_only) == 12 and digits_only.startswith('91'):
+            # Strip country code (91)
+            normalized = digits_only[2:]
+        elif len(digits_only) == 11 and digits_only.startswith('0'):
+            # Strip trunk prefix (0)
+            normalized = digits_only[1:]
+        else:
+            # Already in correct format or close to it
+            normalized = digits_only
+
+        # Validate final number is exactly 10 digits and starts with 6-9
+        if len(normalized) == 10 and normalized[0] in '6789':
+            normalized_numbers.add(normalized)
+
+    # Return as sorted list for deterministic ordering
+    return sorted(list(normalized_numbers))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONTEXT-AWARE UPI ID EXTRACTION MODULE
+# ═══════════════════════════════════════════════════════════════════════════
+# Deterministic extraction of UPI IDs with payment-intent context validation.
+# Uses regex-based extraction combined with keyword-based intent detection.
+# Provides risk scoring based on presence of payment keywords.
+# Does NOT use AI/LLM inference - purely rule-based.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Precompiled regex for UPI ID extraction
+# Pattern explanation:
+# - (?<![\w.-]): Negative lookbehind - ensures we don't match inside larger tokens
+# - [A-Za-z0-9._-]{2,}: Username part (alphanumeric, dots, underscores, hyphens, min 2 chars)
+# - \s*@\s*: @ symbol with optional spaces around it (0 or more)
+# - [A-Za-z][A-Za-z0-9]*: Handle/provider part (must start with letter, then alphanumeric, min 2 total)
+# - (?![\w.-]): Negative lookahead - ensures we don't match inside larger tokens
+# Updated to be more permissive with spaces and avoid edge-case punctuation issues
+UPI_ID_REGEX = re.compile(
+    r'(?<![\w.-])([A-Za-z0-9._-]{2,})\s*@\s*([A-Za-z]{2,})(?![\w.-])',
+    re.IGNORECASE
+)
+
+# Payment intent keyword lexicon (deterministic)
+PAYMENT_INTENT_KEYWORDS = [
+    "send", "transfer", "pay", "payment",
+    "gpay", "google pay", "phonepe", "paytm",
+    "bhim", "upi", "money", "amount",
+    "deposit", "credit", "urgent", "now", "asap"
+]
+
+def extract_upi_ids(text: str) -> List[str]:
+    """
+    Extract and normalize UPI IDs from text.
+
+    This is a deterministic, regex-based extraction function that:
+    - Finds UPI IDs in format: username@provider
+    - Normalizes them (removes spaces, lowercase, removes trailing punctuation)
+    - Returns only unique UPI IDs
+    - Does NOT use AI/LLM inference
+
+    Args:
+        text: Input text to extract UPI IDs from
+
+    Returns:
+        List of unique normalized UPI IDs (as strings)
+
+    Supported formats:
+        - user@paytm
+        - user.name@gpay
+        - user_123@phonepe
+        - user-name@ybl
+        - username @ provider (spaces around @)
+        - User@Provider (case insensitive)
+
+    Example:
+        >>> extract_upi_ids("Pay to scammer@paytm")
+        ['scammer@paytm']
+        >>> extract_upi_ids("Send money to user @ gpay or backup@phonepe")
+        ['backup@phonepe', 'user@gpay']
+    """
+    if not text:
+        return []
+
+    # Find all matches using precompiled regex (returns tuples of groups)
+    matches = UPI_ID_REGEX.findall(text)
+
+    # Normalize and deduplicate
+    normalized_upis: Set[str] = set()
+
+    for match in matches:
+        # match is a tuple (username, provider)
+        if isinstance(match, tuple) and len(match) == 2:
+            username, provider = match
+            # Construct normalized UPI ID
+            normalized = f"{username}@{provider}".lower()
+
+            # Remove any trailing/leading punctuation
+            normalized = re.sub(r'^[.,!;]+', '', normalized)
+            normalized = re.sub(r'[.,!;]+$', '', normalized)
+
+            # Validate
+            if normalized.count('@') == 1:
+                normalized_upis.add(normalized)
+
+    # Return as sorted list for deterministic ordering
+    return sorted(list(normalized_upis))
+
+
+def detect_payment_intent(text: str) -> bool:
+    """
+    Detect payment intent using deterministic keyword matching.
+
+    This function checks if the text contains any payment-related keywords
+    from the predefined lexicon. This is purely keyword-based detection
+    without any AI/LLM inference.
+
+    Args:
+        text: Input text to analyze for payment intent
+
+    Returns:
+        True if payment intent detected, False otherwise
+
+    Example:
+        >>> detect_payment_intent("Please send money to my account")
+        True
+        >>> detect_payment_intent("My UPI ID is user@paytm")
+        True
+        >>> detect_payment_intent("Hello, how are you?")
+        False
+    """
+    if not text:
+        return False
+
+    # Convert to lowercase for case-insensitive matching
+    text_lower = text.lower()
+
+    # Check if any payment keyword is present
+    for keyword in PAYMENT_INTENT_KEYWORDS:
+        if keyword in text_lower:
+            return True
+
+    return False
+
+
+def context_based_upi_detection(text: str) -> dict:
+    """
+    Perform context-aware UPI detection with risk scoring.
+
+    This function combines UPI extraction with payment intent detection
+    to provide a risk assessment. The logic is deterministic and rule-based:
+
+    - If UPI detected AND payment intent detected: High Risk (risk_score += 40)
+    - If UPI detected but no payment intent: Medium Risk (risk_score += 15)
+    - If no UPI detected: No risk
+
+    Args:
+        text: Input text to analyze
+
+    Returns:
+        Dictionary with structure:
+        {
+            "upi_detected": bool,
+            "upi_ids": list,
+            "intent_detected": bool,
+            "risk_score": int,
+            "classification": str
+        }
+
+    Example:
+        >>> context_based_upi_detection("Send money to scammer@paytm urgent!")
+        {
+            'upi_detected': True,
+            'upi_ids': ['scammer@paytm'],
+            'intent_detected': True,
+            'risk_score': 40,
+            'classification': 'High Risk - UPI Payment Request'
+        }
+
+        >>> context_based_upi_detection("My ID is user@paytm")
+        {
+            'upi_detected': True,
+            'upi_ids': ['user@paytm'],
+            'intent_detected': True,
+            'risk_score': 40,
+            'classification': 'High Risk - UPI Payment Request'
+        }
+    """
+    # Extract UPI IDs
+    upi_ids = extract_upi_ids(text)
+    upi_detected = len(upi_ids) > 0
+
+    # Detect payment intent
+    intent_detected = detect_payment_intent(text)
+
+    # Initialize result structure
+    result = {
+        "upi_detected": upi_detected,
+        "upi_ids": upi_ids,
+        "intent_detected": intent_detected,
+        "risk_score": 0,
+        "classification": "No UPI Detected"
+    }
+
+    # Apply deterministic risk scoring logic
+    if upi_detected and intent_detected:
+        result["risk_score"] = 40
+        result["classification"] = "High Risk - UPI Payment Request"
+    elif upi_detected and not intent_detected:
+        result["risk_score"] = 15
+        result["classification"] = "UPI Mention Without Clear Payment Intent"
+
+    return result
+
 
 @dataclass
 class RawIntel:
