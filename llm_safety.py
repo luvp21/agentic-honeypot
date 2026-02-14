@@ -26,10 +26,10 @@ class LLMCircuitBreaker:
         self.last_failure_time: Optional[float] = None
         self.disabled_until: Optional[float] = None
 
-        # Configuration
-        self.MAX_FAILURES = 3
-        self.FAILURE_WINDOW = 60  # seconds
-        self.COOLDOWN_PERIOD = 60  # seconds
+        # Configuration - HACKATHON: More forgiving thresholds for HF infrastructure
+        self.MAX_FAILURES = 5  # Increased from 3 to 5
+        self.FAILURE_WINDOW = 90  # Increased from 60 to 90 seconds
+        self.COOLDOWN_PERIOD = 30  # Reduced from 60 to 30 seconds
 
     def should_allow_llm(self) -> bool:
         """Check if LLM calls are allowed."""

@@ -58,9 +58,10 @@ class GeminiClient:
 
         try:
             # Use safe_llm_call for timeout and circuit breaker protection
+            # HACKATHON FIX: Increased timeouts for Hugging Face infrastructure
             result = await safe_llm_call(
                 _call_gemini,
-                timeout=3.0 if operation_name == "generator" else 2.0,
+                timeout=10.0 if operation_name == "generator" else 8.0,
                 fallback_value=None,
                 operation_name=operation_name
             )
