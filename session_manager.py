@@ -27,7 +27,7 @@ class SessionManager:
         self.profiler = BehavioralProfiler()
 
         # Configuration
-        self.MAX_TURNS_THRESHOLD = 20  # Hard limit - maximum conversation turns
+        self.MAX_TURNS_THRESHOLD = 100  # Emergency safety net - rarely reached in practice
         self.IDLE_TIMEOUT_SECONDS = 60  # Max idle time before finalization
 
     def get_or_create_session(self, session_id: str) -> SessionState:
@@ -219,10 +219,12 @@ class SessionManager:
         if not session.is_scam:
             return False
 
-        # Criterion B: Hard limit at 15 turns
+        # Criterion B: Emergency Safety Net (100 turns) - Only to prevent infinite loops
+        # In normal operation, sessions should end naturally via idle timeout or intel saturation
         if session.message_count >= self.MAX_TURNS_THRESHOLD:
-            logger.info(
-                f"Session {session_id} reached max turns: {session.message_count}"
+            logger.warning(
+                f"⚠️ Session {session_id} reached emergency safety limit: {session.message_count} turns. "
+                "This should rarely happen - check if idle timeout is working."
             )
             return True
 
@@ -255,7 +257,7 @@ class SessionManager:
         # If ANYTHING is missing from the critical 5 (phone, UPI, bank, IFSC, links), delay callback
         core_critical = [has_phone, has_upi, has_bank, has_ifsc, has_links]
         missing_count = sum(1 for x in core_critical if not x)
-        
+
         # HIGH-PRIORITY intel types (most valuable for investigation)
         high_priority = [has_links, has_phone, has_upi]
         high_priority_count = sum(1 for x in high_priority if x)
@@ -267,7 +269,7 @@ class SessionManager:
         # 2. We have ALL 5 types but missing high-priority → wait until turn 17
         # 3. We have 4+ types AND reached turn 18 (very close to hard limit)
         # PRIORITY: Links, Phone Numbers, UPI IDs are most valuable - wait longer to get multiples
-        
+
         if missing_count == 0 and missing_high_priority == 0 and session.message_count >= 16:
             # Have everything including all high-priority types
             logger.info(

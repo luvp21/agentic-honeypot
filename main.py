@@ -195,33 +195,13 @@ async def process_message(
                 performance_logger.log_intelligence_extraction(session_id, total_messages, backfill_intel, "BACKFILL")
 
         # ====================================================================
-        # ELITE REFINEMENT 7: Hard Termination Lock (Turn 20 Limit)
+        # NATURAL CONVERSATION FLOW: No hard turn limit
+        # Sessions end naturally via:
+        # 1. Idle timeout (30-60s) - scammer stops responding
+        # 2. Intelligent finalization - enough intel collected (turn 16-18)
+        # 3. Scammer gives up - natural conversation ending
+        # Emergency safety net at 100 turns prevents infinite loops
         # ====================================================================
-        if total_messages >= 20:
-            logger.warning(f"🏁 [HARD TERMINATION] Session {session_id} reached 20 turns. Forcing completion.")
-
-            # Force FINALIZED state
-            session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
-
-            # Final reply (Neutral)
-            final_reply = "I think I have provided everything needed. Please let me know if there is anything else."
-
-            # Handle callback (ensure sent)
-            callback_status = session_manager.should_send_callback(session_id, total_messages - 1)
-            if callback_status["send"]:
-                send_callback_with_retry(
-                    session_id=session_id,
-                    scam_detected=session.is_scam,
-                    total_messages=total_messages,
-                    extracted_intelligence=session.extracted_intelligence,
-                    scam_type=session.scam_type,
-                    scammer_profile=session.scammer_profile,
-                    max_retries=2,
-                    status=callback_status["type"]
-                )
-                session_manager.mark_callback_sent(session_id, callback_status["type"])
-
-            return HoneypotResponse(status="success", reply=final_reply)
 
         # ====================================================================
         # STEP 1.5: PROMPT INJECTION DEFENSE - Sanitize user input (Layer A)
@@ -520,7 +500,7 @@ async def process_message(
                 session_manager.update_intel_graph(session_id, final_backfill)
                 logger.info(f"Final sweep found {len(final_backfill)} additional items")
                 performance_logger.log_intelligence_extraction(session_id, total_messages, final_backfill, "FINAL_SWEEP")
-            
+
             # Transition to FINALIZED state
             session_manager.transition_state(session_id, SessionStateEnum.FINALIZED)
             logger.info(
@@ -592,7 +572,7 @@ async def process_message(
                 "scam_type": session.scam_type,
                 "intel_count": intel_count,
                 "callback_sent": session.callback_sent,
-                "finalization_trigger": "hard_limit" if total_messages >= 20 else "intelligent"
+                "finalization_trigger": "hard_limit" if total_messages >= 100 else "intelligent"
             })
             session._summary_logged = True  # Prevent duplicate logging
 
