@@ -136,27 +136,42 @@ class AIHoneypotAgent:
         elif strategy != "DEFAULT":
              strategy_response = self._generate_strategy_response(strategy, persona_name, missing_intel)
 
-        # GENERATION: Try LLM first, then fallback to rules
+        # GENERATION PRIORITY: Rule-based extraction > LLM > Strategy fallback
+        # Rule-based templates have direct extraction prompts that work better
         response = None
         generation_method = None
 
-        # 1. Try Gemini LLM if available
-        from gemini_client import gemini_client
+        # CRITICAL: If we're missing high-priority intel, use RULE-BASED extraction FIRST
+        # Rule-based has proven extraction templates like "What is your UPI ID?"
+        if priority_missing and turn_number > 2:
+            response = self._generate_rule_based_response(
+                message,
+                persona_name,
+                stage,
+                scam_type,
+                len(conversation_history),
+                missing_intel
+            )
+            generation_method = "RULE_BASED_EXTRACTION"
 
-        if gemini_client and strategy == "DEFAULT":
-            prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
-            llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
+        # 1. Try Gemini LLM if no critical extraction needed
+        if not response:
+            from gemini_client import gemini_client
 
-            if llm_response:
-                response = llm_response.strip()
-                generation_method = "LLM_GEMINI"
+            if gemini_client and strategy == "DEFAULT":
+                prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+                llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
+
+                if llm_response:
+                    response = llm_response.strip()
+                    generation_method = "LLM_GEMINI"
 
         # 2. Use strategy response if LLM failed or specific strategy required
         if not response and strategy_response:
             response = strategy_response
             generation_method = "STRATEGY_OVERRIDE"
 
-        # 3. Fallback to rule-based if everything else failed
+        # 3. Final fallback to rule-based if everything else failed
         if not response:
             response = self._generate_rule_based_response(
                 message,
@@ -452,22 +467,28 @@ Generate a realistic response that:
         turn_number: int,
         missing_intel: List[str] = None
     ) -> str:
-        """Generate response using rule-based system (for demo purposes)"""
+        """Generate response using rule-based extraction templates - HIGH PRIORITY for intel gathering"""
 
-        # PRIORITY OVERRIDE: If high-priority intel is missing, force extraction
-        # This overrides normal stage logic to ensure we get the goods
-        if missing_intel and turn_number > 2:
+        # ⚡ CRITICAL EXTRACTION PRIORITY: If ANY intel is missing after turn 2, FORCE EXTRACTION
+        # Rule-based templates have proven direct questions that extract better than LLM
+        if missing_intel and turn_number >= 2:
             priority_map = {
                 "bank_accounts": [
                     "My bank app is asking for your Account Number to add you as a beneficiary. What is it?",
                     "I need your full Bank Account Number to proceed. The form won't let me continue without it.",
                     "Can you send me your Account Number? I want to make sure the money goes to the right place.",
-                    "The transfer keeps failing. Could you double check your bank account number?"
+                    "The transfer keeps failing. Could you double check your bank account number?",
+                    "Okay I'm ready to send the money. What's the account number I should transfer to?",
+                    "I'm at my bank now. They need your 16-digit account number to process this.",
+                    "My son says I need to verify the receiver's account first. Can you give me the number?",
+                    "The bank clerk is asking - what account should I transfer the funds to?"
                 ],
                 "ifsc_codes": [
                     "It's asking for an IFSC code to verify the branch. What is yours?",
                     "I have the account number but I need the IFSC code to send the money.",
-                    "Can you give me the 11-digit IFSC code? My bank says it's required."
+                    "Can you give me the 11-digit IFSC code? My bank says it's required.",
+                    "The system won't proceed without an IFSC code. Which branch are you at?",
+                    "I'm filling the form - it says IFSC code is mandatory. Can you share it?"
                 ],
                 "upi_ids": [
                     "It says I can pay via UPI. What is your UPI ID? (e.g., name@bank)",
@@ -475,7 +496,11 @@ Generate a realistic response that:
                     "I want to send it now. Please give me your UPI ID so I can verify the transfer.",
                     "This UPI ID is not working. Do you have another UPI ID I can try?",
                     "PhonePe says this UPI address is invalid. Can you share a different one?",
-                    "Google Pay is showing an error with this UPI. Do you have a backup UPI ID?"
+                    "Google Pay is showing an error with this UPI. Do you have a backup UPI ID?",
+                    "I prefer UPI payment - it's faster. What's your UPI address?",
+                    "My grandson set up PayTM for me. Can you give me your UPI so I can send money?",
+                    "The system says 'Enter receiver UPI'. What should I type there?",
+                    "I'm ready to pay. Just need your UPI ID to complete the transaction."
                 ],
                 "phone_numbers": [
                     "The app is asking for the recipient's Mobile Number for SMS verification. What is your number?",
@@ -483,7 +508,11 @@ Generate a realistic response that:
                     "Can you give me your official Contact Number? My bank might call to confirm.",
                     "I tried calling that number but it's not reachable. Do you have another number I can reach you on?",
                     "The system says this mobile number is invalid. Can you give me a different number?",
-                    "Is there an alternate phone number I can use? This one isn't working."
+                    "Is there an alternate phone number I can use? This one isn't working.",
+                    "I want to call you to confirm this. What's your phone number?",
+                    "Can you give me a number where I can reach you if something goes wrong?",
+                    "My phone crashed and I lost your number. Can you send it again?",
+                    "I prefer to call before sending money. What's your contact number?"
                 ],
                 "phishing_links": [
                     "The link you sent before isn't opening. Can you send the Website Link again?",
@@ -492,7 +521,10 @@ Generate a realistic response that:
                     "I clicked the link but it says 'Page Not Found'. Do you have a different link or another way to verify?",
                     "This link is showing a security warning. Do you have a safer link or another website?",
                     "My browser says this site can't be reached. Can you send me a backup link?",
-                    "The page is loading very slowly. Is there another link or mirror site I can use?"
+                    "The page is loading very slowly. Is there another link or mirror site I can use?",
+                    "I accidentally closed the browser. Can you resend that website link?",
+                    "My grandson says this link looks suspicious. Do you have an official website?",
+                    "The link expired. Can you generate a new one for me to access?"
                 ],
                 "telegram_ids": [
                     "Can I message you on Telegram for faster updates? What is your username?",
@@ -501,11 +533,23 @@ Generate a realistic response that:
                 ]
             }
 
-            # Ordered check: Prefer Bank/UPI/Link over Phone/Telegram
-            priority_order = ["bank_accounts", "upi_ids", "phishing_links", "ifsc_codes", "phone_numbers", "telegram_ids"]
-            for p_type in priority_order:
-                if p_type in missing_intel:
-                    return random.choice(priority_map[p_type])
+            # ⚡ SMART EXTRACTION: Cycle through different intel types to avoid repetition
+            # Use turn number to select which intel type to ask about
+            priority_order = ["upi_ids", "phone_numbers", "bank_accounts", "phishing_links", "ifsc_codes", "telegram_ids"]
+            
+            # Filter to only missing intel
+            missing_priority = [p for p in priority_order if p in missing_intel]
+            
+            if missing_priority:
+                # Cycle through different types on different turns to avoid asking same question
+                intel_index = turn_number % len(missing_priority)
+                selected_intel = missing_priority[intel_index]
+                
+                # Within that intel type, also vary the question
+                questions = priority_map.get(selected_intel, [])
+                if questions:
+                    question_index = (turn_number // len(missing_priority)) % len(questions)
+                    return questions[question_index]
 
         message_lower = message.lower()
 
