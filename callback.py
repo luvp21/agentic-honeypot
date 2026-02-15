@@ -48,11 +48,12 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
         other_intel["qrMentions"] = qr_mentions
 
     return ExtractedIntelligence(
+        phoneNumbers=extracted_data.get("phone_numbers", []),
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
-        ifscCodes=extracted_data.get("ifsc_codes", []),
         phishingLinks=extracted_data.get("phishing_links", []),
-        phoneNumbers=extracted_data.get("phone_numbers", []),
+        emailAddresses=extracted_data.get("email_addresses", []),
+        ifscCodes=extracted_data.get("ifsc_codes", []),
         suspiciousKeywords=extracted_data.get("suspicious_keywords", []),
         other=other_intel
     )
@@ -88,15 +89,16 @@ def generate_agent_notes(
 
     # 2. Intelligence Breakdown
     intel_summary = []
-    if intelligence.bankAccounts: intel_summary.append("Bank Creds")
-    if intelligence.upiIds: intel_summary.append("UPI Endpoints")
-    if intelligence.phishingLinks: intel_summary.append("C2 Phishing URLs")
-    if intelligence.phoneNumbers: intel_summary.append("Contact Numbers")
+    if intelligence.phoneNumbers: intel_summary.append("Phone Numbers")
+    if intelligence.bankAccounts: intel_summary.append("Bank Accounts")
+    if intelligence.upiIds: intel_summary.append("UPI IDs")
+    if intelligence.phishingLinks: intel_summary.append("Phishing URLs")
+    if intelligence.emailAddresses: intel_summary.append("Email Addresses")
 
     # Add summary for 'other' intelligence
     if intelligence.other:
-        if intelligence.other.get("shortUrls"): intel_summary.append("Obfuscated URLs")
-        if intelligence.other.get("telegramIds"): intel_summary.append("Telegram Contacts")
+        if intelligence.other.get("shortUrls"): intel_summary.append("Short URLs")
+        if intelligence.other.get("telegramIds"): intel_summary.append("Telegram IDs")
         if intelligence.other.get("qrMentions"): intel_summary.append("QR Codes")
 
     if intel_summary:
@@ -133,7 +135,8 @@ def send_final_callback(
     scam_type: str = "unknown",
     scammer_profile=None,  # NEW: ScammerProfile object
     conversation_history: List = None,
-    status: str = "final"
+    engagement_duration_seconds: int = 0,  # NEW: Required for scoring
+    status: str = "completed"
 ) -> bool:
     """
     Send final results to GUVI evaluation platform.
@@ -149,7 +152,8 @@ def send_final_callback(
         scam_type: Type of scam
         scammer_profile: Behavioral profile (NEW)
         conversation_history: Optional conversation data
-        status: Callback status (preliminary/final/delta)
+        engagement_duration_seconds: Duration in seconds (NEW - for 10 points)
+        status: Callback status (completed/final)
 
     Returns:
         True if callback successful, False otherwise
@@ -176,14 +180,22 @@ def send_final_callback(
         # Append status to notes for visibility
         agent_notes = f"[{status.upper()} CALLBACK] {agent_notes}"
 
+        # Create engagement metrics (NEW - for 2.5 points)
+        from models import EngagementMetrics
+        engagement_metrics = EngagementMetrics(
+            totalMessagesExchanged=total_messages,
+            engagementDurationSeconds=engagement_duration_seconds
+        )
+
         # Create payload
         payload = FinalCallbackPayload(
             sessionId=session_id,
+            status=status,  # NEW - Required for 5 points
             scamDetected=scam_detected,
             totalMessagesExchanged=total_messages,
             extractedIntelligence=intelligence,
-            agentNotes=agent_notes,
-            status=status
+            engagementMetrics=engagement_metrics,  # NEW - worth 2.5 points
+            agentNotes=agent_notes
         )
 
         # Log payload for debugging
@@ -237,8 +249,9 @@ def send_callback_with_retry(
     extracted_intelligence: dict,
     scam_type: str = "unknown",
     scammer_profile=None,  # NEW
+    engagement_duration_seconds: int = 0,  # NEW
     max_retries: int = 3,
-    status: str = "final"
+    status: str = "completed"
 ) -> bool:
     """
     Send callback with retry logic and exponential backoff.
@@ -251,6 +264,7 @@ def send_callback_with_retry(
         extracted_intelligence: Intelligence data
         scam_type: Scam type
         scammer_profile: Behavioral profile (NEW)
+        engagement_duration_seconds: Duration in seconds (NEW)
         max_retries: Maximum retry attempts
         status: Callback status
 
@@ -264,8 +278,8 @@ def send_callback_with_retry(
 
     for attempt in range(max_retries):
 
-        # Defensive Switch: Only allow 'final' status to hit the external API
-        if status != "final":
+        # Defensive Switch: Only allow 'completed' or 'final' status to hit the external API
+        if status not in ["completed", "final"]:
              logger.info(f"Skipping external callback for status: {status} (Internal Phase Only)")
              return True
 
@@ -276,6 +290,7 @@ def send_callback_with_retry(
             extracted_intelligence=extracted_intelligence,
             scam_type=scam_type,
             scammer_profile=scammer_profile,  # NEW
+            engagement_duration_seconds=engagement_duration_seconds,  # NEW
             status=status
         )
 

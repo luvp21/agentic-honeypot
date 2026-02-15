@@ -402,7 +402,7 @@ class IntelligenceExtractor:
                  has_context = bool(re.search(r'(?i)(account|bank|branch|ifsc)', context_window[-200:]))
             extracted.append(RawIntel("ifsc_codes", value, "context" if has_context else "strict", 1.0 if has_context else 0.5, message_index))
 
-        # 2.3 UPI IDs
+        # 2.3 UPI IDs (strict patterns first)
         handles_regex = "|".join(self.upi_handles)
         upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
         for match in re.finditer(upi_pattern, text):
@@ -417,8 +417,8 @@ class IntelligenceExtractor:
                 val = match.group(1)
                 # Skip if already extracted
                 if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
-                # Skip common false positives (email-like but not UPI-like)
-                if "@gmail" in val.lower() or "@yahoo" in val.lower() or "@outlook" in val.lower():
+                # Skip common email domains - these are emails, not UPI IDs
+                if any(domain in val.lower() for domain in ["@gmail", "@yahoo", "@outlook", "@hotmail", "@live", "@fake", ".com", ".net", ".org", ".in"]):
                     continue
                 extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
@@ -445,24 +445,35 @@ class IntelligenceExtractor:
 
             extracted.append(RawIntel("phone_numbers", value, "strict", 1.0, message_index))
 
-        # 2.5 Phishing Links (Legacy Strict)
+        # 2.5 Email Addresses (NEW - for hackathon scoring)
+        # Pattern: standard email format (user@domain.com)
+        email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+        for match in re.finditer(email_pattern, text):
+            email = match.group()
+            # Skip if it's actually a UPI ID (already extracted)
+            if any(x.value == email and x.type == "upi_ids" for x in extracted):
+                continue
+            # Extract as email
+            extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
+
+        # 2.6 Phishing Links (Legacy Strict)
         url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
         for match in re.finditer(url_pattern, text):
             extracted.append(RawIntel("phishing_links", match.group(1), "strict", 1.0, message_index))
 
-        # 2.6 Short URLs (bit.ly, tinyurl, etc.)
+        # 2.7 Short URLs (bit.ly, tinyurl, etc.)
         short_url_pattern = r'\b(?:https?://)?(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly|rebrand\.ly)/[a-zA-Z0-9\-_]{3,20}\b'
         for match in re.finditer(short_url_pattern, text):
             extracted.append(RawIntel("short_urls", match.group(), "strict", 1.0, message_index))
 
-        # 2.7 Telegram IDs (@username)
+        # 2.8 Telegram IDs (@username)
         telegram_pattern = r'(?<!\w)@([a-zA-Z][a-zA-Z0-9_]{4,31})(?!\w)'
         for match in re.finditer(telegram_pattern, text):
             has_context = any(w in text_lower for w in ["telegram", "tg", "contact", "message", "chat"])
             if has_context:
                 extracted.append(RawIntel("telegram_ids", match.group(1), "context", 1.0, message_index))
 
-        # 2.8 Holder Name & Branch (Advanced Context Extraction)
+        # 2.9 Holder Name & Branch (Advanced Context Extraction)
         # Patterns for: "name is X", "holder: X", "branch is X"
         holder_pattern = r'(?i)(?:account\s*name|holder|payee)(?:\s*(?:is|of|for|:|-))?\s*([a-z.\s]{2,30}?)(?=[,.]|$|\n)'
         for match in re.finditer(holder_pattern, text):

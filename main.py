@@ -521,6 +521,9 @@ async def process_message(
             callback_type = callback_status["type"]
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
+            # Calculate engagement duration (CRITICAL for hackathon scoring - 10 points)
+            engagement_duration = session_manager.calculate_engagement_duration(session_id)
+
             # Send callback with scammer profile
             # ELITE FIX: total_messages reflects (history + current_message).
             # We add 1 to account for the agent_response we just generated.
@@ -531,6 +534,7 @@ async def process_message(
                 extracted_intelligence=session.extracted_intelligence,
                 scam_type=session.scam_type,
                 scammer_profile=session.scammer_profile,
+                engagement_duration_seconds=engagement_duration,  # NEW: for 10 points
                 max_retries=3,
                 status=callback_type
             )
@@ -630,6 +634,27 @@ async def health_check():
     }
 
 
+@app.get("/test/session/{session_id}")
+async def get_session_test(session_id: str):
+    """
+    TEST ENDPOINT: Get session intelligence for self-evaluation testing.
+    Returns extracted intelligence from a specific session.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        return {"error": "Session not found"}
+
+    return {
+        "sessionId": session_id,
+        "scamDetected": session.is_scam,
+        "scamType": session.scam_type,
+        "messageCount": session.message_count,
+        "extractedIntelligence": session.extracted_intelligence,
+        "intelGraph": {k: len(v) for k, v in session.intel_graph.items()},
+        "state": session.state
+    }
+
+
 @app.get("/stats")
 async def get_stats(api_key: str = Depends(verify_api_key)):
     """
@@ -710,6 +735,9 @@ async def check_idle_sessions(api_key: str = Depends(verify_api_key)):
             # Check if callback should be sent
             callback_status = session_manager.should_send_callback(session_id, session.message_count - 1)
             if callback_status["send"]:
+                # Calculate engagement duration
+                engagement_duration = session_manager.calculate_engagement_duration(session_id)
+
                 # Send callback
                 callback_success = send_callback_with_retry(
                     session_id=session_id,
@@ -718,6 +746,7 @@ async def check_idle_sessions(api_key: str = Depends(verify_api_key)):
                     extracted_intelligence=session.extracted_intelligence,
                     scam_type=session.scam_type,
                     scammer_profile=session.scammer_profile,
+                    engagement_duration_seconds=engagement_duration,  # NEW
                     max_retries=3,
                     status=callback_status["type"]
                 )

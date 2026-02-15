@@ -123,13 +123,23 @@ class ExtractedIntelligence(BaseModel):
     Intelligence data structure for final callback.
     Field names MUST be camelCase as per spec.
     """
+    phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
     bankAccounts: List[str] = Field(default_factory=list, description="Extracted bank account numbers")
     upiIds: List[str] = Field(default_factory=list, description="Extracted UPI IDs")
-    ifscCodes: List[str] = Field(default_factory=list, description="Extracted IFSC Codes")
     phishingLinks: List[str] = Field(default_factory=list, description="Phishing URLs")
-    phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
+    emailAddresses: List[str] = Field(default_factory=list, description="Email addresses")
+    ifscCodes: List[str] = Field(default_factory=list, description="Extracted IFSC Codes")
     suspiciousKeywords: List[str] = Field(default_factory=list, description="Scam indicators")
     other: Dict[str, List[str]] = Field(default_factory=dict, description="Other extracted intelligence (telegram IDs, short URLs, QR mentions, etc.)")
+
+
+class EngagementMetrics(BaseModel):
+    """
+    Engagement quality metrics for scoring.
+    NEW: Required for 20-point engagement quality score.
+    """
+    totalMessagesExchanged: int = Field(..., description="Total message count")
+    engagementDurationSeconds: int = Field(..., description="Duration in seconds from first to last message")
 
 
 class FinalCallbackPayload(BaseModel):
@@ -138,11 +148,12 @@ class FinalCallbackPayload(BaseModel):
     Sent to: https://hackathon.guvi.in/api/updateHoneyPotFinalResult
     """
     sessionId: str = Field(..., description="Session ID from platform")
+    status: str = Field("completed", description="Status: completed/final - REQUIRED for 5 points")
     scamDetected: bool = Field(..., description="Must be True before sending")
     totalMessagesExchanged: int = Field(..., description="Total message count in session")
     extractedIntelligence: ExtractedIntelligence = Field(..., description="All extracted intelligence")
+    engagementMetrics: Optional[EngagementMetrics] = Field(None, description="Engagement metrics - worth 2.5 points")
     agentNotes: str = Field(..., description="Summary of scammer behavior and tactics")
-    status: Optional[str] = Field("final", description="Callback status: preliminary or final")
 
 
 # ============================================================================

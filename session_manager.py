@@ -146,6 +146,40 @@ class SessionManager:
         # Assuming history is full conversation:
         return len(conversation_history) + 1
 
+    def calculate_engagement_duration(self, session_id: str) -> int:
+        """
+        Calculate engagement duration in seconds from first to last message.
+        CRITICAL for hackathon scoring - worth 10 points.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Duration in seconds (0 if less than 2 messages)
+        """
+        session = self.get_session(session_id)
+        if not session or not session.conversation_full or len(session.conversation_full) < 2:
+            return 0
+
+        try:
+            # Get first and last message timestamps (epoch milliseconds)
+            first_msg = session.conversation_full[0]
+            last_msg = session.conversation_full[-1]
+
+            # Convert epoch milliseconds to seconds
+            first_time = first_msg.timestamp / 1000.0
+            last_time = last_msg.timestamp / 1000.0
+
+            # Calculate duration
+            duration = int(last_time - first_time)
+
+            # Ensure non-negative
+            return max(0, duration)
+
+        except (AttributeError, TypeError, ZeroDivisionError) as e:
+            logger.error(f"Error calculating duration for {session_id}: {e}")
+            return 0
+
     def transition_state(
         self,
         session_id: str,

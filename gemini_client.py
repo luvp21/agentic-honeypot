@@ -26,8 +26,8 @@ class GeminiClient:
         self.model = genai.GenerativeModel(
             "models/gemini-2.5-flash",
             generation_config={
-                "temperature": 0.7,        # Higher for variety, prevents loops
-                "max_output_tokens": 200,  # Longer for complete sentences
+                "temperature": 0.8,        # Higher for variety, prevents loops
+                "max_output_tokens": 800,  # Increased to prevent truncation
                 "top_p": 0.95,             # Slightly higher for creativity
                 "top_k": 40                # More options to prevent repetition
             }

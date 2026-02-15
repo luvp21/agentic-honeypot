@@ -337,12 +337,81 @@ Example responses:
 Your emotional response (asking for {target}):"""
 
         try:
-            response = await self.gemini_client.generate_response(llm_prompt, operation_name="contextual_extraction")
-            response = response.strip().strip('"').strip("'")
-            logger.info(f"🤖 LLM Contextual: {response}")
+            # Call LLM with proper error handling
+            if not self.gemini_client:
+                raise Exception("Gemini client not initialized")
+
+            raw_response = await self.gemini_client.generate_response(
+                llm_prompt,
+                operation_name="contextual_extraction"
+            )
+
+            # CRITICAL: Debug logging
+            logger.info(f"🔍 RAW LLM ({len(raw_response)} chars): '{raw_response[:150]}...'")
+
+            # Validate we got something substantial
+            if not raw_response or len(raw_response.strip()) < 10:
+                raise Exception(f"LLM returned empty or too short response: {len(raw_response)} chars")
+
+            # Clean response VERY CAREFULLY
+            response = raw_response.strip()
+
+            # Remove markdown code blocks (```...\n...\n```)
+            if response.startswith('```'):
+                lines = response.split('\n')
+                if len(lines) > 2:
+                    # Extract content between ``` markers
+                    response = '\n'.join(lines[1:-1])
+                response = response.strip()
+
+            # Remove language markers like ```text or ```json
+            if response.startswith('```'):
+                first_newline = response.find('\n')
+                if first_newline > 0:
+                    response = response[first_newline+1:].strip()
+                if response.endswith('```'):
+                    response = response[:-3].strip()
+
+            # Remove wrapping quotes ONLY if they wrap the ENTIRE text
+            if len(response) > 2:
+                if (response[0] == '"' and response[-1] == '"'):
+                    response = response[1:-1].strip()
+                elif (response[0] == "'" and response[-1] == "'"):
+                    response = response[1:-1].strip()
+
+            # Remove any remaining markdown formatting
+            response = response.replace('**', '').replace('__', '')
+
+            # Final validation
+            if len(response) < 15:
+                logger.warning(f"⚠️ LLM response too short after cleaning: {len(response)} chars - '{response}'")
+                raise Exception(f"Response too short: '{response}' ({len(response)} chars)")
+
+            # Validate it's asking for the right thing
+            response_lower = response.lower()
+            target_keywords = {
+                "bank account": ['account', 'bank'],
+                "IFSC code": ['ifsc', 'code', 'branch'],
+                "UPI ID": ['upi', 'id', 'payment'],
+                "verification link": ['link', 'website', 'url'],
+                "phone number": ['phone', 'number', 'call', 'contact']
+            }
+
+            # Check if response mentions the target or "your" (asking for their info)
+            has_target = any(kw in response_lower for keywords in target_keywords.values() for kw in keywords)
+            asks_their_info = 'your' in response_lower
+
+            if not (has_target or asks_their_info):
+                logger.warning(f"⚠️ LLM response doesn't ask for intel: '{response}'")
+                raise Exception(f"Response doesn't extract intel: '{response}'")
+
+            # Success!
+            logger.info(f"✅ LLM Contextual ({len(response)} chars): {response}")
             return response
+
         except Exception as e:
-            logger.error(f"❌ LLM contextual failed: {e}")
+            logger.error(f"❌ LLM contextual extraction failed: {e}")
+            logger.info("🔄 Falling back to heuristic extraction")
             # Fallback to heuristic
             return self._build_contextual_extraction_heuristic(missing_intel_dict, scam_type, message, conversation_history)
 
