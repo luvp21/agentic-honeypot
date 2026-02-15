@@ -94,6 +94,18 @@ EXTRACTION_TEMPLATES = {
 
 class AIHoneypotAgent:
     def __init__(self):
+        # Initialize Gemini client for LLM mode
+        self.gemini_client = None
+        if GEMINI_API_KEY:
+            try:
+                from gemini_client import GeminiClient
+                self.gemini_client = GeminiClient()
+                logger.info("✅ Gemini LLM initialized - Hybrid mode active")
+            except Exception as e:
+                logger.warning(f"⚠️ Gemini initialization failed: {e} - Using pure heuristic mode")
+        else:
+            logger.info("⚡ No API key - Pure heuristic mode active")
+
         self.personas = {
             "elderly": {
                 "name": "Margaret Thompson",
@@ -220,6 +232,18 @@ class AIHoneypotAgent:
         # 3. Novel/complex messages (low keyword density, longer messages) → LLM
         if scam_keyword_count < 2 and len(message.split()) > 20:
             logger.info(f"🤖 LLM: Complex/novel message (low keywords, long message)")
+            return True
+
+        # 5. Vague/indirect questions (building rapport, not direct extraction) → LLM
+        indirect_patterns = ['how are you', 'wonderful day', 'hope you', 'thank you for', 'i appreciate', 'you seem']
+        if any(pattern in message_lower for pattern in indirect_patterns) and turn_number <= 5:
+            logger.info(f"🤖 LLM: Indirect/rapport-building message detected")
+            return True
+
+        # 6. Congratulatory/reward framing (positive manipulation) → LLM
+        reward_patterns = ['congratulations', 'winner', 'prize', 'selected', 'lucky', 'reward']
+        if any(pattern in message_lower for pattern in reward_patterns):
+            logger.info(f"🤖 LLM: Reward/prize scam pattern detected")
             return True
 
         # 4. Multi-turn negotiation (back-and-forth conversation) → LLM
@@ -399,7 +423,10 @@ Your emotional response (asking for {target}):"""
                 "Before we proceed, I need YOUR bank account number to confirm.",
                 "Can you share YOUR account number? My bank is asking for it.",
                 "What's YOUR account number? I need to enter it here.",
-                "Please give me YOUR account details to verify this is real."
+                "Please give me YOUR account details to verify this is real.",
+                "I understand. For verification, what's YOUR account number?",
+                "Okay, but which account should I transfer to? Share YOUR number.",
+                "That sounds good. What's YOUR bank account for the transaction?"
             ])
 
         # Priority 2: IFSC Code
@@ -410,7 +437,10 @@ Your emotional response (asking for {target}):"""
                 "What's YOUR IFSC code? It's asking me to enter it.",
                 "I also need YOUR IFSC code - which branch are you from?",
                 "Can you provide YOUR IFSC? The form won't let me continue.",
-                "Please share YOUR bank's IFSC code to verify."
+                "Please share YOUR bank's IFSC code to verify.",
+                "Okay, and what's YOUR branch IFSC for confirmation?",
+                "The app is asking for YOUR IFSC code. Which branch?",
+                "I see. To proceed, I need YOUR IFSC code please."
             ])
 
         # Priority 3: UPI ID
@@ -422,7 +452,9 @@ Your emotional response (asking for {target}):"""
                     "I'm ready to pay! What's YOUR UPI address?",
                     "Which UPI ID should I use? Please share yours.",
                     "My phone is asking for YOUR UPI ID to complete this.",
-                    "What's YOUR UPI? I'll send it right now!"
+                    "What's YOUR UPI? I'll send it right now!",
+                    "Great! So which UPI should I transfer the amount to?",
+                    "Perfect, and YOUR UPI ID for the reward transfer?"
                 ])
             else:
                 extraction_question = random.choice([
@@ -430,7 +462,9 @@ Your emotional response (asking for {target}):"""
                     "Can you share YOUR UPI ID? I want to make sure this is legitimate.",
                     "What's YOUR UPI address? Just to confirm you're from the bank.",
                     "Please give me YOUR UPI ID for verification.",
-                    "I need YOUR UPI to check this is real."
+                    "I need YOUR UPI to check this is real.",
+                    "Understood. For my records, what's YOUR UPI ID?",
+                    "That makes sense. What's YOUR official UPI address?"
                 ])
 
         # Priority 4: Phishing Link
@@ -452,7 +486,10 @@ Your emotional response (asking for {target}):"""
                 "I'd feel safer talking. What's YOUR contact number?",
                 "Let me verify by calling. What's YOUR number?",
                 "Can you give me YOUR phone number? I want to speak to someone.",
-                "What's YOUR official helpline number so I can call back?"
+                "What's YOUR official helpline number so I can call back?",
+                "Okay, and what number should I save for future contact?",
+                "I see. For my records, what's YOUR direct phone number?",
+                "That's helpful. What's YOUR callback number in case we disconnect?"
             ])
 
         # All collected: Ask for backups
