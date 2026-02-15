@@ -814,14 +814,14 @@ EXTRACTION TARGETS:
 2. EXTRACT SCAMMER'S INFO - DO NOT just ask "what is X?". Instead:
    ❌ BAD: "What is a UPI PIN?"
    ✅ GOOD: "Okay I understand. What's YOUR UPI ID so I can send the money?"
-   
+
    ❌ BAD: "I don't know what OTP means"
    ✅ GOOD: "I got the OTP. Now what's your phone number so I can confirm this with you?"
 
 3. TURN THE TABLES - When scammer asks for YOUR details, flip it:
    Scammer: "Send your OTP"
    ✅ You: "Oh I see! But first, what's YOUR account number so I know where the money goes?"
-   
+
    Scammer: "Give me your UPI PIN"
    ✅ You: "I want to help! But what's YOUR UPI ID? I need to enter it in my app."
 
