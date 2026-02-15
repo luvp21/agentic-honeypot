@@ -42,6 +42,15 @@ EXTRACTION_TEMPLATES = {
         "I'll send it now! What's YOUR account number?",
     ],
 
+    "missing_email": [
+        "What's YOUR email address? I need it for confirmation.",
+        "Can you share YOUR official email so I can verify this?",
+        "The system needs YOUR email ID to send the receipt.",
+        "Please give me YOUR email address for the records.",
+        "I'll need YOUR email to complete this. What is it?",
+        "What's YOUR company email? I want to be sure this is real.",
+    ],
+
     "missing_ifsc": [
         "It's asking for an IFSC code to verify the branch. What is yours?",
         "I have the account number but I need the IFSC code to send the money.",
@@ -283,23 +292,27 @@ class AIHoneypotAgent:
         import random
 
         # Determine what to extract based on priority
+        # Priority: Bank → Email → UPI → Link → Phone → IFSC (lowest)
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
         has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
-        # Determine extraction target
+        # Determine extraction target (Email high priority, IFSC lowest)
         if not has_bank:
             target = "their bank account number"
-        elif not has_ifsc:
-            target = "their IFSC code"
+        elif not has_email:
+            target = "their email address for confirmation"
         elif not has_upi:
             target = "their UPI ID"
         elif not has_link:
             target = "the phishing link they want you to visit"
         elif not has_phone:
             target = "their phone number"
+        elif not has_ifsc:
+            target = "their IFSC code"
         else:
             target = "backup/alternative account details"
 
@@ -423,7 +436,7 @@ Your emotional response (asking for {target}):"""
         1. React emotionally to scammer's message
         2. Show urgency/concern matching the threat level
         3. Naturally weave in extraction questions
-        4. Follow progressive priority: Bank → IFSC → UPI → Link → Phone
+        4. Follow progressive priority: Bank → Email → UPI → Link → Phone → IFSC (lowest)
         """
         import random
 
@@ -436,14 +449,15 @@ Your emotional response (asking for {target}):"""
         asks_otp = any(word in message_lower for word in ['otp', 'code', 'pin', 'password', 'cvv'])
         mentions_payment = any(word in message_lower for word in ['pay', 'send', 'transfer', 'payment', 'amount'])
 
-        # Check what we need
+        # Check what we need (Email high priority, IFSC lowest)
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
         has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
-        logger.info(f"📊 Intel: Bank={has_bank}, IFSC={has_ifsc}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
+        logger.info(f"📊 Intel: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}, IFSC={has_ifsc}")
         logger.info(f"🎭 Context: Urgent={is_urgent}, Threat={is_threatening}, OTP={asks_otp}")
 
         # Build emotional prefix based on scammer's message
@@ -498,18 +512,18 @@ Your emotional response (asking for {target}):"""
                 "That sounds good. What's YOUR bank account for the transaction?"
             ])
 
-        # Priority 2: IFSC Code
-        elif not has_ifsc:
-            logger.info("🎯 TARGET: IFSC Code")
+        # Priority 2: Email Address
+        elif not has_email:
+            logger.info("🎯 TARGET: Email Address")
             extraction_question = random.choice([
-                "But the system needs YOUR IFSC code to process this.",
-                "What's YOUR IFSC code? It's asking me to enter it.",
-                "I also need YOUR IFSC code - which branch are you from?",
-                "Can you provide YOUR IFSC? The form won't let me continue.",
-                "Please share YOUR bank's IFSC code to verify.",
-                "Okay, and what's YOUR branch IFSC for confirmation?",
-                "The app is asking for YOUR IFSC code. Which branch?",
-                "I see. To proceed, I need YOUR IFSC code please."
+                "But I need YOUR email address to confirm this transaction.",
+                "Can you share YOUR official email? I want to verify this is real.",
+                "What's YOUR email address for the confirmation receipt?",
+                "Please give me YOUR email ID so I can send you the details.",
+                "I'll need YOUR email to complete the verification.",
+                "What's YOUR company email address for the records?",
+                "Can you provide YOUR email? The system is asking for it.",
+                "I see. What's YOUR email address to send the confirmation?"
             ])
 
         # Priority 3: UPI ID
@@ -561,6 +575,20 @@ Your emotional response (asking for {target}):"""
                 "That's helpful. What's YOUR callback number in case we disconnect?"
             ])
 
+        # Priority 6: IFSC Code (LOWEST - only if everything else is extracted)
+        elif not has_ifsc:
+            logger.info("🎯 TARGET: IFSC Code (final)")
+            extraction_question = random.choice([
+                "But the system needs YOUR IFSC code to process this.",
+                "What's YOUR IFSC code? It's asking me to enter it.",
+                "I also need YOUR IFSC code - which branch are you from?",
+                "Can you provide YOUR IFSC? The form won't let me continue.",
+                "Please share YOUR bank's IFSC code to verify.",
+                "Okay, and what's YOUR branch IFSC for confirmation?",
+                "The app is asking for YOUR IFSC code. Which branch?",
+                "I see. To proceed, I need YOUR IFSC code please."
+            ])
+
         # All collected: Ask for backups
         else:
             logger.info("✅ All intel collected - asking for backups")
@@ -590,12 +618,13 @@ Your emotional response (asking for {target}):"""
 
         # Check what we DON'T have yet (empty means we're missing it)
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
         has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
-        logger.info(f"📊 Intel status: Bank={has_bank}, IFSC={has_ifsc}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
+        logger.info(f"📊 Intel status: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}, IFSC={has_ifsc}")
 
         # SPECIAL CASE 1: If scammer asks for credentials, flip it (ONLY if we have some intel already)
         credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
@@ -618,10 +647,10 @@ Your emotional response (asking for {target}):"""
             logger.info("🎯 TARGET: Bank Account Number")
             return random.choice(EXTRACTION_TEMPLATES["missing_account"])
 
-        # Priority 2: IFSC Code (needed with account number)
-        if not has_ifsc:
-            logger.info("🎯 TARGET: IFSC Code")
-            return random.choice(EXTRACTION_TEMPLATES["missing_ifsc"])
+        # Priority 2: Email Address
+        if not has_email:
+            logger.info("🎯 TARGET: Email Address")
+            return random.choice(EXTRACTION_TEMPLATES["missing_email"])
 
         # Priority 3: UPI ID (most common payment method)
         if not has_upi:
@@ -637,6 +666,11 @@ Your emotional response (asking for {target}):"""
         if not has_phone:
             logger.info("🎯 TARGET: Phone Number")
             return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
+
+        # Priority 6: IFSC Code (LOWEST - only if everything else extracted)
+        if not has_ifsc:
+            logger.info("🎯 TARGET: IFSC Code (final)")
+            return random.choice(EXTRACTION_TEMPLATES["missing_ifsc"])
 
         # ALL INTEL COLLECTED: Ask for backups/alternatives
         logger.info("✅ All primary intel collected - requesting backups")
