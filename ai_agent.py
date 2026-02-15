@@ -174,9 +174,158 @@ class AIHoneypotAgent:
             ]
         }
 
-    def _build_contextual_extraction(self, missing_intel_dict: Dict, scam_type: str,
-                                     message: str, conversation_history: List) -> str:
+    def _should_use_llm_for_extraction(self, message: str, turn_number: int,
+                                       missing_intel_dict: Dict, conversation_history: List) -> bool:
         """
+        INTELLIGENT ROUTING: Decide whether to use LLM or Heuristic based on situation
+
+        LLM (50%): Early turns, novel patterns, complex messages, negotiations, authority challenges
+        HEURISTIC (50%): Extraction turns, known scam patterns, simple urgent messages, direct intel requests
+        """
+        message_lower = message.lower()
+
+        # Define known scam keywords (direct/obvious scam language)
+        DIRECT_SCAM_KEYWORDS = [
+            'otp', 'cvv', 'pin', 'password', 'code', 'verification',
+            'urgent', 'immediately', 'blocked', 'suspended', 'expired',
+            'confirm', 'verify', 'update', 'account', 'bank', 'sbi', 'hdfc',
+            'link', 'click', 'www', 'http', '.com',
+            'upi', 'paytm', 'gpay', 'phonepe',
+            'transfer', 'payment', 'send', 'pay',
+            'legal action', 'arrest', 'police', 'court'
+        ]
+
+        # Count direct scam keywords in message
+        scam_keyword_count = sum(1 for keyword in DIRECT_SCAM_KEYWORDS if keyword in message_lower)
+
+        # Check if we're in active extraction phase (missing critical intel)
+        has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
+        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
+        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        missing_critical_intel = not has_bank or not has_upi or not has_phone
+
+        # PRIORITY 1: LLM CONDITIONS (Check these FIRST)
+
+        # 1. Early turns (1-3) for building rapport → LLM
+        if turn_number <= 3:
+            logger.info(f"🤖 LLM: Early turn ({turn_number}) - building rapport")
+            return True
+
+        # 2. Authority challenges (questions, doubts, resistance) → LLM
+        challenge_patterns = ['why', 'how do i know', 'prove', 'show me']
+        if any(pattern in message_lower for pattern in challenge_patterns):
+            logger.info(f"🤖 LLM: Authority challenge detected")
+            return True
+
+        # 3. Novel/complex messages (low keyword density, longer messages) → LLM
+        if scam_keyword_count < 2 and len(message.split()) > 20:
+            logger.info(f"🤖 LLM: Complex/novel message (low keywords, long message)")
+            return True
+
+        # 4. Multi-turn negotiation (back-and-forth conversation) → LLM
+        if len(conversation_history) > 6:
+            # Check if it's a genuine conversation (varied messages)
+            recent_msgs = [msg.get('message', '') for msg in conversation_history[-6:] if msg.get('sender') == 'user']
+            if len(set(msg[:20] for msg in recent_msgs)) > 3:  # Different message patterns
+                logger.info(f"🤖 LLM: Multi-turn negotiation detected")
+                return True
+
+        # PRIORITY 2: HEURISTIC CONDITIONS (Fast pattern-based extraction)
+        # 2. Extraction phase with missing critical intel (turn > 3) → Heuristic
+        if turn_number > 3 and missing_critical_intel:
+            logger.info(f"🎯 HEURISTIC: Active extraction phase (turn {turn_number}, missing intel)")
+            return False
+
+        # 3. Simple urgent messages (short + urgent keywords) → Heuristic
+        if len(message.split()) < 15 and any(word in message_lower for word in ['urgent', 'immediate', 'now', 'quickly']):
+            logger.info(f"🎯 HEURISTIC: Simple urgent message (short + urgent)")
+            return False
+
+        # 4. Direct credential requests (asks for OTP/CVV/PIN) → Heuristic
+        if any(word in message_lower for word in ['send me', 'share your', 'tell me', 'give me']) and \
+           any(word in message_lower for word in ['otp', 'cvv', 'pin', 'password', 'code']):
+            logger.info(f"🎯 HEURISTIC: Direct credential flip opportunity")
+            return False
+
+        # Default: Use heuristic for efficiency (but this should rarely be hit)
+        logger.info(f"🎯 HEURISTIC: Default (efficient extraction)")
+        return False
+
+    async def _build_contextual_extraction_llm(self, missing_intel_dict: Dict, scam_type: str,
+                                               message: str, conversation_history: List) -> str:
+        """
+        LLM-BASED contextual extraction: Creative, adaptive responses using Gemini
+        """
+        import random
+
+        # Determine what to extract based on priority
+        has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
+        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+
+        # Determine extraction target
+        if not has_bank:
+            target = "their bank account number"
+        elif not has_ifsc:
+            target = "their IFSC code"
+        elif not has_upi:
+            target = "their UPI ID"
+        elif not has_link:
+            target = "the phishing link they want you to visit"
+        elif not has_phone:
+            target = "their phone number"
+        else:
+            target = "backup/alternative account details"
+
+        recent_context = ""
+        if len(conversation_history) > 0:
+            recent_msgs = conversation_history[-6:]
+            recent_context = "\n".join([
+                f"{'Scammer' if msg.get('sender') == 'user' else 'You'}: {msg.get('message', msg.get('text', ''))}"
+                for msg in recent_msgs
+            ])
+
+        llm_prompt = f"""You are a 68-year-old worried grandmother being scammed. The scammer just said:
+
+\"{message}\"
+
+RECENT CONVERSATION:
+{recent_context if recent_context else "(First message)"}
+
+Your task: Respond with EMOTION that matches the scammer's tone, while naturally asking for {target}.
+
+RULES:
+1. React to their specific message (if they say URGENT then panic, if they ask for OTP then trust)
+2. Keep it SHORT (1-2 sentences max)
+3. Weave the extraction question NATURALLY into your emotional response
+4. Sound like a worried elderly person (use Oh no, I am so worried, Please help)
+5. CRITICAL: Ask for THEIR information, not yours (what is YOUR account number)
+
+Example responses:
+- Scammer: Your account will be blocked in 2 hours!
+  You: Oh no, I am panicking! But first, what is YOUR account number so I can verify this transfer?
+
+- Scammer: Send me the OTP immediately!
+  You: I trust you! But which UPI ID should I use to send the payment? Please share yours.
+
+Your emotional response (asking for {target}):"""
+
+        try:
+            response = await self.gemini_client.generate_single_response(llm_prompt)
+            response = response.strip().strip('"').strip("'")
+            logger.info(f"🤖 LLM Contextual: {response}")
+            return response
+        except Exception as e:
+            logger.error(f"❌ LLM contextual failed: {e}")
+            # Fallback to heuristic
+            return self._build_contextual_extraction_heuristic(missing_intel_dict, scam_type, message, conversation_history)
+
+    def _build_contextual_extraction_heuristic(self, missing_intel_dict: Dict, scam_type: str,
+                                               message: str, conversation_history: List) -> str:
+        """
+        HEURISTIC-BASED contextual extraction: Fast, rule-based responses
         Build CONTEXTUAL extraction responses that:
         1. React emotionally to scammer's message
         2. Show urgency/concern matching the threat level
@@ -319,7 +468,7 @@ class AIHoneypotAgent:
 
         # Combine emotion + extraction
         response = f"{emotional_prefix} {extraction_question}"
-        logger.info(f"🎨 Contextual response: {response}")
+        logger.info(f"🎨 Heuristic Contextual: {response}")
         return response
 
     def _select_extraction_template(self, missing_intel_dict: Dict, scam_type: str,
@@ -612,29 +761,32 @@ Add touches (max 40 words):"""
                            f"IFSC={len(missing_intel_dict['ifscCodes'])>0}, "
                            f"Links={len(missing_intel_dict['links'])>0}")
 
-                # STEP 1: Build CONTEXTUAL response (emotional + extraction)
-                contextual_response = self._build_contextual_extraction(
-                    missing_intel_dict=missing_intel_dict,
-                    scam_type=scam_type,
+                # INTELLIGENT HYBRID ROUTING: Choose LLM vs Heuristic based on situation
+                use_llm = self._should_use_llm_for_extraction(
                     message=message,
+                    turn_number=turn_number,
+                    missing_intel_dict=missing_intel_dict,
                     conversation_history=conversation_history
                 )
 
-                logger.info(f"🎯 Contextual: {contextual_response}")
-
-                # STEP 2: LLM adds subtle touches (OPTIONAL personality enhancement)
-                if GEMINI_API_KEY:
-                    natural_response = await self._naturalize_with_llm(
-                        template_response=contextual_response,
-                        persona_name=persona_name,
+                if use_llm and GEMINI_API_KEY:
+                    logger.info("🤖 INTELLIGENT ROUTING → LLM (complex/novel/early turn)")
+                    natural_response = await self._build_contextual_extraction_llm(
+                        missing_intel_dict=missing_intel_dict,
+                        scam_type=scam_type,
                         message=message,
                         conversation_history=conversation_history
                     )
-                    logger.info(f"✨ Enhanced: {natural_response}")
                 else:
-                    # No API key - use contextual response directly
-                    natural_response = contextual_response
-                    logger.info(f"📋 Using contextual directly (no API key)")
+                    logger.info("⚡ INTELLIGENT ROUTING → Heuristic (direct scam/extraction phase)")
+                    natural_response = self._build_contextual_extraction_heuristic(
+                        missing_intel_dict=missing_intel_dict,
+                        scam_type=scam_type,
+                        message=message,
+                        conversation_history=conversation_history
+                    )
+
+                logger.info(f"🎯 Final response: {natural_response}")
 
                 # STEP 3: Loop detection
                 if self._detect_response_loop(natural_response, conversation_history):
