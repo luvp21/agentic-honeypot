@@ -163,11 +163,13 @@ class AIHoneypotAgent:
 
         # CRITICAL: If we're missing high-priority intel, choose extraction method
         if priority_missing and turn_number >= 2:
+            # ⚠️ TEMPORARY: Rule-based DISABLED for LLM testing
             # Use LLM occasionally for variety (turns 7, 11, 15... every 4 turns starting from 7)
             # This gives 75% rule-based, 25% LLM for natural variation
-            use_llm_for_extraction = ((turn_number - 7) % 4 == 0) and turn_number >= 7
+            use_llm_for_extraction = True  # TESTING MODE: Always use LLM
+            # use_llm_for_extraction = ((turn_number - 7) % 4 == 0) and turn_number >= 7  # ORIGINAL
 
-            if not use_llm_for_extraction:
+            if False:  # DISABLED: Rule-based extraction temporarily off
                 # RULE-BASED EXTRACTION (Primary - 80% of extraction attempts)
                 response = self._generate_rule_based_response(
                     message,
@@ -203,15 +205,18 @@ class AIHoneypotAgent:
 
                 # If LLM failed, fallback to rule-based
                 if not response:
-                    response = self._generate_rule_based_response(
-                        message,
-                        persona_name,
-                        stage,
-                        scam_type,
-                        len(conversation_history),
-                        missing_intel
-                    )
-                    generation_method = "RULE_BASED_EXTRACTION"
+                    # ⚠️ TESTING MODE: Fallback disabled, keep LLM only
+                    # response = self._generate_rule_based_response(
+                    #     message,
+                    #     persona_name,
+                    #     stage,
+                    #     scam_type,
+                    #     len(conversation_history),
+                    #     missing_intel
+                    # )
+                    # generation_method = "RULE_BASED_EXTRACTION"
+                    generation_method = "LLM_FAILED_NO_FALLBACK"
+                    response = "I'm not sure what to do next. Can you help me?"  # Minimal fallback
 
         # 1. Try Gemini LLM for natural conversation (no critical extraction needed)
         if not response:
