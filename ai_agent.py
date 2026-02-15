@@ -173,41 +173,88 @@ class AIHoneypotAgent:
 
         message_lower = message.lower()
 
+        # Check what we've asked for recently (last 6 messages)
+        recent_questions = []
+        if conversation_history:
+            for msg in conversation_history[-6:]:
+                if msg.get('sender') == 'agent' or msg.get('role') == 'assistant':
+                    text = msg.get('message', msg.get('text', msg.get('content', ''))).lower()
+                    # Priority order: more specific first
+                    if 'account' in text or 'bank' in text or 'ifsc' in text:
+                        recent_questions.append('account')
+                    elif 'link' in text or 'website' in text:
+                        recent_questions.append('link')
+                    elif 'upi' in text:
+                        recent_questions.append('upi')
+                    elif 'phone' in text or 'number' in text or 'contact' in text or 'employee' in text:
+                        recent_questions.append('phone')
+
         # Priority 1: If scammer asks for credentials, flip it
         credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
         if any(word in message_lower for word in credential_words):
             return random.choice(EXTRACTION_TEMPLATES["credential_request"])
 
-        # Priority 2: If scammer creates urgency
+        # Priority 2: If scammer creates urgency (first 3 turns only, then diversify)
         urgency_words = ['urgent', 'immediate', 'now', 'blocked', 'suspend', 'legal', 'arrest']
-        if any(word in message_lower for word in urgency_words):
+        if any(word in message_lower for word in urgency_words) and len(conversation_history) < 6:
             return random.choice(EXTRACTION_TEMPLATES["urgency_response"])
 
-        # Priority 3: Check what we already have
-        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
-        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
-        has_account = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
-        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+        # Priority 3: Check what's MISSING (empty arrays = missing, has values = extracted)
+        missing_upi = not missing_intel_dict.get('upiIds') or len(missing_intel_dict.get('upiIds', [])) == 0
+        missing_phone = not missing_intel_dict.get('phoneNumbers') or len(missing_intel_dict.get('phoneNumbers', [])) == 0
+        missing_account = not missing_intel_dict.get('bankAccounts') or len(missing_intel_dict.get('bankAccounts', [])) == 0
+        missing_link = not missing_intel_dict.get('links') or len(missing_intel_dict.get('links', [])) == 0
+        missing_ifsc = not missing_intel_dict.get('ifscCodes') or len(missing_intel_dict.get('ifscCodes', [])) == 0
 
-        if has_upi or has_phone or has_account or has_link:
-            return random.choice(EXTRACTION_TEMPLATES["need_backup"])
+        # Priority 4: If scammer mentions specific payment method, ask for that
+        if 'upi' in message_lower and missing_upi and 'upi' not in recent_questions[-2:]:
+            return random.choice(EXTRACTION_TEMPLATES["missing_upi"])
+        if ('phone' in message_lower or 'call' in message_lower) and missing_phone and 'phone' not in recent_questions[-2:]:
+            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
+        if ('account' in message_lower or 'bank' in message_lower) and missing_account and 'account' not in recent_questions[-2:]:
+            return random.choice(EXTRACTION_TEMPLATES["missing_account"])
+        if ('link' in message_lower or 'website' in message_lower or 'click' in message_lower) and missing_link and 'link' not in recent_questions[-2:]:
+            return random.choice(EXTRACTION_TEMPLATES["missing_link"])
 
-        # Priority 4: If scammer is vague
+        # Priority 5: If scammer is vague, push back
         contact_words = ['upi', 'phone', 'account', 'number', 'call', 'send', 'pay', 'click', 'link']
         if len(message_lower) < 30 or not any(word in message_lower for word in contact_words):
             return random.choice(EXTRACTION_TEMPLATES["scammer_vague"])
 
-        # Priority 5: Target most valuable missing intel
-        if not has_upi:
-            return random.choice(EXTRACTION_TEMPLATES["missing_upi"])
-        if not has_phone:
-            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
-        if not has_account:
-            return random.choice(EXTRACTION_TEMPLATES["missing_account"])
-        if not has_link:
-            return random.choice(EXTRACTION_TEMPLATES["missing_link"])
+        # Priority 6: Target TRULY MISSING intel (avoid repeating what we just asked)
+        # Build priority list of what's missing
+        missing_targets = []
 
-        return random.choice(EXTRACTION_TEMPLATES["need_backup"])
+        # CRITICAL: Don't repeat same question type from last 2 turns
+        # Prioritize: account/IFSC > link > UPI > phone (rarest to most common)
+        if missing_account and 'account' not in recent_questions[-3:]:
+            missing_targets.append(('account', EXTRACTION_TEMPLATES["missing_account"]))
+
+        if missing_ifsc and 'account' not in recent_questions[-3:]:
+            missing_targets.append(('ifsc', EXTRACTION_TEMPLATES["missing_account"]))
+
+        if missing_link and 'link' not in recent_questions[-3:]:
+            missing_targets.append(('link', EXTRACTION_TEMPLATES["missing_link"]))
+
+        if missing_upi and 'upi' not in recent_questions[-3:]:
+            missing_targets.append(('upi', EXTRACTION_TEMPLATES["missing_upi"]))
+
+        if missing_phone and 'phone' not in recent_questions[-3:]:
+            missing_targets.append(('phone', EXTRACTION_TEMPLATES["missing_phone"]))
+
+        # Pick from truly missing targets (shuffle for variety)
+        if missing_targets:
+            random.shuffle(missing_targets)
+            _, template_list = missing_targets[0]
+            return random.choice(template_list)
+
+        # Priority 7: If we have some intel, ask for backups/alternates
+        has_some_intel = not missing_upi or not missing_phone or not missing_account or not missing_link
+        if has_some_intel:
+            return random.choice(EXTRACTION_TEMPLATES["need_backup"])
+
+        # Fallback: scammer being vague
+        return random.choice(EXTRACTION_TEMPLATES["scammer_vague"])
 
     async def _naturalize_with_llm(self, template_response: str, persona_name: str,
                             message: str, conversation_history: List) -> str:
