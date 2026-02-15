@@ -27,7 +27,7 @@ class GeminiClient:
             "models/gemini-2.5-flash",  # Updated to valid model name
             generation_config={
                 "temperature": 0.2,  # Minimize variance for reproducibility
-                "max_output_tokens": 500,  # Constrain length
+                "max_output_tokens": 150,  # Short responses (1-2 sentences) - was 500
                 "top_p": 0.9,  # Nucleus sampling parameter
                 "top_k": 20   # Top-k sampling parameter
             }
