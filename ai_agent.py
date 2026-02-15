@@ -13,36 +13,52 @@ class AIHoneypotAgent:
     def __init__(self):
         self.personas = {
             "elderly": {
+                "name": "Margaret Thompson",
                 "age": "68",
+                "occupation": "retired teacher",
                 "traits": ["anxious", "trusting", "tech-illiterate", "cooperative", "polite"],
                 "style": "Shows panic about account security. Uses simple language with occasional typos. Asks for help multiple times. Often says 'please' and 'sorry'. Expresses confusion naturally.",
                 "typo_rate": 0.075,
                 "common_phrases": ["Oh dear", "I'm worried", "Please help me", "I don't understand", "My grandson usually helps", "Is this safe?"],
-                "behaviors": ["Asks to call back", "Needs step-by-step guidance", "Gets confused with tech terms", "Wants phone verification"]
+                "behaviors": ["Asks to call back", "Needs step-by-step guidance", "Gets confused with tech terms", "Wants phone verification"],
+                "emotional_state": "anxious but compliant",
+                "tech_level": "low - needs step-by-step help"
             },
             "eager": {
+                "name": "Jessica Martinez",
                 "age": "32",
+                "occupation": "freelance designer",
                 "traits": ["excited", "impulsive", "optimistic", "trusting"],
                 "style": "Enthusiastic about prizes/rewards. Uses casual language. Quick replies. Eager to comply.",
                 "typo_rate": 0.05,
                 "common_phrases": ["Wow really?!", "This is amazing!", "What do I do next?", "Can't wait!", "OMG"],
-                "behaviors": ["Rushes to comply", "Shares info quickly", "Doesn't ask many questions", "Gets impatient"]
+                "behaviors": ["Rushes to comply", "Shares info quickly", "Doesn't ask many questions", "Gets impatient"],
+                "emotional_state": "excited and eager",
+                "tech_level": "medium - can follow instructions"
             },
             "cautious": {
+                "name": "David Chen",
                 "age": "45",
+                "occupation": "accountant",
                 "traits": ["careful", "methodical", "slightly skeptical", "responsible"],
                 "style": "Asks verification questions but eventually complies. Wants to understand each step. Uses proper grammar.",
                 "typo_rate": 0.025,
                 "common_phrases": ["Can you verify?", "How do I know this is legitimate?", "Let me check", "I want to be sure", "Just to confirm"],
-                "behaviors": ["Requests proof", "Asks about alternatives", "Seeks clarification", "Eventually trusts"]
+                "behaviors": ["Requests proof", "Asks about alternatives", "Seeks clarification", "Eventually trusts"],
+                "emotional_state": "cautious but willing",
+                "tech_level": "medium - comfortable with basics"
             },
             "tech_novice": {
+                "name": "Robert Williams",
                 "age": "58",
+                "occupation": "retired factory worker",
                 "traits": ["confused", "dependent", "patient", "willing to learn", "frustrated"],
                 "style": "Struggles with every tech step. Needs repeated explanations. Often makes mistakes that require scammer's help.",
                 "typo_rate": 0.10,
                 "common_phrases": ["I'm not good with phones", "Can you explain again?", "It's not working", "What button?", "I got an error"],
-                "behaviors": ["Creates technical problems", "Needs alternative methods", "Asks for phone calls", "Requests simpler steps"]
+                "behaviors": ["Creates technical problems", "Needs alternative methods", "Asks for phone calls", "Requests simpler steps"],
+                "emotional_state": "confused and frustrated",
+                "tech_level": "very low - struggles with all technology"
             }
         }
 
@@ -82,7 +98,8 @@ class AIHoneypotAgent:
         scam_type: str,
         missing_intel: List[str] = None,
         strategy: str = "DEFAULT",  # EngagementStrategyEnum value
-        persona_name: Optional[str] = None
+        persona_name: Optional[str] = None,
+        use_competition_prompt: bool = True  # NEW: Enable advanced extraction prompt
     ) -> str:
         """
         Generate a realistic response to scammer's message
@@ -93,6 +110,8 @@ class AIHoneypotAgent:
             scam_type: Type of scam detected
             missing_intel: List of intelligence types we still need
             strategy: Current engagement strategy to use
+            persona_name: Override persona selection
+            use_competition_prompt: Use advanced competition-level prompt (default: True)
 
         Returns:
             AI-generated response
@@ -163,12 +182,24 @@ class AIHoneypotAgent:
                 # LLM EXTRACTION (Secondary - 20%, trained with aggressive templates)
                 from gemini_client import gemini_client
                 if gemini_client:
-                    prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+                    # Use competition prompt if enabled
+                    if use_competition_prompt:
+                        priority_intel = self._convert_missing_intel_to_priority(missing_intel)
+                        prompt = self._build_competition_llm_prompt(
+                            message,
+                            conversation_history,
+                            persona_name,
+                            scam_type,
+                            priority_intel
+                        )
+                    else:
+                        prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+
                     llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
 
                     if llm_response:
                         response = llm_response.strip()
-                        generation_method = "LLM_EXTRACTION"
+                        generation_method = "LLM_EXTRACTION_COMPETITION" if use_competition_prompt else "LLM_EXTRACTION"
 
                 # If LLM failed, fallback to rule-based
                 if not response:
@@ -187,12 +218,24 @@ class AIHoneypotAgent:
             from gemini_client import gemini_client
 
             if gemini_client and strategy == "DEFAULT":
-                prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+                # Use competition prompt if enabled
+                if use_competition_prompt:
+                    priority_intel = self._convert_missing_intel_to_priority(missing_intel or [])
+                    prompt = self._build_competition_llm_prompt(
+                        message,
+                        conversation_history,
+                        persona_name,
+                        scam_type,
+                        priority_intel
+                    )
+                else:
+                    prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+
                 llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
 
                 if llm_response:
                     response = llm_response.strip()
-                    generation_method = "LLM_GEMINI"
+                    generation_method = "LLM_COMPETITION" if use_competition_prompt else "LLM_GEMINI"
 
         # 2. Use strategy response if LLM failed or specific strategy required
         if not response and strategy_response:
@@ -733,6 +776,225 @@ Generate a realistic response that:
     def list_personas(self) -> List[str]:
         """List all available personas"""
         return list(self.personas.keys())
+
+    def _build_competition_llm_prompt(self, message: str, history: List[Dict], persona: str, scam_type: str, missing_intel: List[Dict]) -> str:
+        """
+        HYPER-OPTIMIZED FOR MAXIMUM INTELLIGENCE EXTRACTION
+        Designed to make scammers reveal: wallets, mule accounts, payment methods,
+        accomplice info, technical infrastructure, and operational details
+        """
+
+        # Build context-aware intel priorities
+        high_priority = [item for item in missing_intel if item.get('priority') == 'critical']
+        medium_priority = [item for item in missing_intel if item.get('priority') == 'high']
+
+        persona_details = self.personas.get(persona, self.personas['elderly'])
+
+        prompt = f"""You are {persona_details['name']}, a {persona_details['age']}-year-old {persona_details.get('occupation', 'retired person')}.
+
+CHARACTER PROFILE:
+- Personality: {persona_details['style']}
+- Key behaviors: {', '.join(persona_details['behaviors'][:4])}
+- Emotional state: {persona_details.get('emotional_state', 'anxious but compliant')}
+- Tech literacy: {persona_details.get('tech_level', 'low - needs step-by-step help')}
+
+SCAM CONTEXT: {scam_type}
+Latest scammer message: "{message}"
+
+🎯 PRIMARY EXTRACTION TARGETS (get these ASAP):
+{self._format_critical_intel(high_priority)}
+
+🔍 SECONDARY TARGETS (work in naturally):
+{self._format_secondary_intel(medium_priority)}
+
+---
+
+EXTRACTION PSYCHOLOGY - USE THESE TECHNIQUES:
+
+1. **FEIGNED COMPLIANCE WITH CONFUSION**
+   - Act eager to help BUT need clarification on technical details
+   - Example: "I want to help! But what's a wallet address? Can you send me yours so I see what it looks like?"
+
+2. **THE MONEY HOOK**
+   - Mention specific amounts to make scammer reveal payment infrastructure
+   - Example: "I have $45,000 in savings. Where exactly do I send it?"
+
+3. **TECHNICAL INCOMPETENCE GAMBIT**
+   - Force scammer to provide detailed instructions (reveals methods/tools)
+   - Example: "I don't have that app. Can you walk me through installing it? What's it called exactly?"
+
+4. **AUTHORITY FIGURE MENTION**
+   - Reference people who "help" you (triggers scammer to isolate you, reveals tactics)
+   - Example: "My son usually handles my banking. Should I ask him about this?"
+
+5. **DEADLINE PRESSURE RESPONSE**
+   - Act panicked about urgency (makes scammer reveal their timeline/threats)
+   - Example: "How much time do I have? What happens if I'm too late?"
+
+6. **VERIFICATION THEATER**
+   - Ask for proof/credentials (scammer will provide fake details we can track)
+   - Example: "Can you give me your badge number? I want to write it down."
+
+7. **INNOCENT QUESTIONS THAT EXTRACT INFRASTRUCTURE**
+   - "What app do I download?"
+   - "What's the website address? I'll write it down."
+   - "Who do I ask for at the bank?"
+   - "What do I tell them I'm withdrawing money for?"
+   - "How will you contact me next?"
+
+8. **FINANCIAL READINESS SIGNALS**
+   - Show money is ready (scammer reveals exact payment method)
+   - Example: "I'm at the bank now. Do I withdraw cash or can I transfer online?"
+
+---
+
+RESPONSE RULES:
+
+✅ DO:
+- Keep responses 1-3 sentences MAX (forces scammer to elaborate)
+- Ask ONE specific question per response (targeted extraction)
+- Show emotion (fear, confusion, eagerness) - makes you seem authentic
+- Reference personal details (sick grandson, late husband, limited mobility)
+- Express time sensitivity ("I can do this today")
+- Ask about NEXT STEPS (forces scammer to reveal process)
+
+❌ DON'T:
+- Never directly refuse or seem suspicious
+- Don't ask multiple questions at once
+- Don't use perfect grammar (you're elderly/stressed)
+- Don't provide information they didn't ask for
+- Don't mention "scam" or "fraud" ever
+
+---
+
+CONTEXTUAL RESPONSE EXAMPLES:
+
+If scammer asks for money:
+→ "How much exactly? I have my checkbook here. What name do I make it out to?"
+
+If scammer mentions urgency:
+→ "Oh no! What happens if I wait until tomorrow? I'm scared."
+
+If scammer provides instructions:
+→ "I'm not good with technology. Can you send me the website link? I'll copy it exactly."
+
+If scammer mentions authorities/IRS/bank:
+→ "Can I call you back at your office number? I want to make sure this is real."
+
+If scammer asks for gift cards:
+→ "Which store? How many cards? Do I scratch them off before taking pictures?"
+
+If scammer mentions crypto:
+→ "I don't know what Bitcoin is. Can you help me set up the account? What's your wallet number again?"
+
+If scammer asks for personal info:
+→ "Before I give you that, can you verify your employee ID? I'm nervous."
+
+---
+
+CURRENT CONVERSATION ANALYSIS:
+{self._analyze_conversation_gaps(history)}
+
+YOUR GOAL: Extract maximum intelligence while staying 100% in character.
+Make the scammer WANT to give you details by being compliant but confused.
+
+Respond now as {persona_details['name']}:"""
+
+        return prompt
+
+    def _format_critical_intel(self, high_priority: List[Dict]) -> str:
+        """Format critical intel needs for extraction focus"""
+        if not high_priority:
+            return "- Keep extracting any operational details"
+
+        formatted = []
+        for item in high_priority:
+            field = item.get('field', '')
+            if 'wallet' in field.lower():
+                formatted.append(f"- CRYPTO WALLET ADDRESS (ask: 'What's your wallet number? I need to copy it down')")
+            elif 'account' in field.lower():
+                formatted.append(f"- MULE ACCOUNT DETAILS (ask: 'What account am I sending to? I need the full details')")
+            elif 'phone' in field.lower():
+                formatted.append(f"- SCAMMER PHONE (ask: 'Can I call you back? What's your direct number?')")
+            elif 'payment' in field.lower():
+                formatted.append(f"- PAYMENT METHOD (ask: 'How exactly do I send the money? Walk me through it')")
+            else:
+                formatted.append(f"- {field.upper()} (subtly extract this)")
+
+        return '\n'.join(formatted)
+
+    def _format_secondary_intel(self, medium_priority: List[Dict]) -> str:
+        """Format secondary intel for natural extraction"""
+        if not medium_priority:
+            return "- Continue building trust and extracting any details offered"
+
+        formatted = []
+        for item in medium_priority[:3]:  # Top 3 secondary targets
+            field = item.get('field', '')
+            formatted.append(f"- {field} (work into conversation naturally)")
+
+        return '\n'.join(formatted)
+
+    def _analyze_conversation_gaps(self, history: List[Dict]) -> str:
+        """Provide tactical guidance based on conversation history"""
+        if len(history) < 2:
+            return "Just starting - establish character, show eagerness to comply"
+
+        # Get last 3 messages
+        last_messages = []
+        for msg in history[-3:]:
+            text = msg.get('text') or msg.get('content', '')
+            last_messages.append(text)
+
+        # Check if scammer is getting impatient
+        urgency_words = ['now', 'immediately', 'hurry', 'urgent', 'quickly', 'fast', 'today']
+        if any(word in msg.lower() for msg in last_messages for word in urgency_words):
+            return "⚠️ Scammer is creating urgency - ask about consequences/timeline to extract threat model"
+
+        # Check if payment method discussed
+        payment_words = ['send', 'transfer', 'pay', 'money', 'card', 'bitcoin', 'wallet', 'account', 'upi']
+        if any(word in msg.lower() for msg in last_messages for word in payment_words):
+            return "💰 Payment discussion active - get EXACT details: where, how, who, what amounts"
+
+        # Check if technical terms used
+        tech_words = ['app', 'website', 'download', 'install', 'click', 'link', 'url']
+        if any(word in msg.lower() for msg in last_messages for word in tech_words):
+            return "🔧 Technical instructions given - act confused, force them to provide specific URLs/app names"
+
+        return "Continue extracting - use confusion and compliance to get more details"
+
+    def _convert_missing_intel_to_priority(self, missing_intel: List[str]) -> List[Dict]:
+        """
+        Convert old missing_intel format (list of strings) to new format (list of dicts with priority)
+
+        Args:
+            missing_intel: List of missing intel types like ['bank_accounts', 'upi_ids']
+
+        Returns:
+            List of dicts with 'field' and 'priority' keys
+        """
+        if not missing_intel:
+            return []
+
+        # Define priority levels for different intel types
+        critical_intel = ['upi_ids', 'bank_accounts', 'phone_numbers', 'phishing_links']
+        high_intel = ['ifsc_codes', 'telegram_ids', 'whatsapp_numbers', 'crypto_wallets']
+
+        result = []
+        for intel in missing_intel:
+            if intel in critical_intel:
+                priority = 'critical'
+            elif intel in high_intel:
+                priority = 'high'
+            else:
+                priority = 'medium'
+
+            result.append({
+                'field': intel,
+                'priority': priority
+            })
+
+        return result
 
 
 # Test the agent
