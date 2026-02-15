@@ -691,35 +691,116 @@ class ScamDetector:
             # ═══════════════════════════════════════════════════════════
 
             # Strict JSON Prompt (stateless classification)
-            prompt = f"""
-You are a cybersecurity scam intelligence engine.
+            prompt = f"""You are an elite anti-scam AI trained to detect ALL scam types.
 
-Analyze ONLY the following message in isolation:
-
-Message:
+MESSAGE TO ANALYZE:
 "{message}"
 
-Internally reason step-by-step:
-1. Identify scam indicators.
-2. Identify psychological manipulation tactics.
-3. Determine scam type.
-4. Identify if financial extraction attempt is underway.
-5. Estimate confidence.
+🎯 DETECT THESE SCAM PATTERNS:
 
-DO NOT output reasoning steps.
+1. PHISHING - Fake authority/urgency:
+   - "Your account will be blocked/suspended"
+   - "Verify your identity immediately"
+   - "Click this link to secure account"
+   - Impersonates: bank, government, tech support, delivery
 
-Return ONLY valid JSON:
+2. PRIZE/LOTTERY - Too good to be true:
+   - "You won ₹X lakhs/prize"
+   - "Congratulations! Claim your reward"
+   - "Lucky draw winner"
+   - Asks for fee/tax to claim
 
+3. TECH SUPPORT - Fake problems:
+   - "Your device is infected/hacked"
+   - "Security alert detected"
+   - "Call this number for support"
+   - "Download this software to fix"
+
+4. JOB/INVESTMENT - Fake opportunities:
+   - "Work from home, earn ₹X daily"
+   - "Guaranteed returns on investment"
+   - "Part-time job, no experience needed"
+   - Asks for upfront payment/registration fee
+
+5. ROMANCE/RELATIONSHIP - Emotional manipulation:
+   - Builds fake relationship online
+   - Eventually asks for money (emergency, travel, medical)
+   - Love/trust exploitation
+
+6. OTP/PIN THEFT - Direct credential theft:
+   - "Send your OTP/PIN/password"
+   - "Share verification code"
+   - "Enter your CVV/card details"
+
+7. IMPERSONATION - Pretends to be someone:
+   - Friend/family in trouble
+   - Official from bank/government
+   - Customer support agent
+   - Delivery person
+
+8. PAYMENT SCAM - Fake transactions:
+   - "Send money first, then receive"
+   - "Pay processing fee"
+   - "Refund requires payment"
+   - Wrong UPI requests
+
+---
+
+🚨 SCAM INDICATORS (Check for these):
+✓ Urgency: "immediately", "now", "urgent", "within X minutes"
+✓ Threats: "blocked", "suspended", "legal action", "arrested"
+✓ Too good: "won", "prize", "guaranteed", "free"
+✓ Authority: "IRS", "bank official", "police", "government"
+✓ Credentials: asks for OTP, PIN, password, CVV, account details
+✓ Payment: requests money transfer, gift cards, crypto, UPI
+✓ Links: suspicious URLs, shortened links, fake domains
+✓ Poor grammar: spelling errors, odd phrasing (but not always)
+
+---
+
+📊 CONFIDENCE SCORING:
+- 0.95-1.0: Explicit scam (asks for OTP/money + urgency + threat)
+- 0.80-0.94: Very likely scam (2+ strong indicators)
+- 0.60-0.79: Probable scam (1-2 indicators, suspicious context)
+- 0.40-0.59: Possible scam (vague suspicious elements)
+- 0.0-0.39: Not a scam (normal conversation)
+
+---
+
+TACTICS DETECTION (list all that apply):
+- "URGENCY" - time pressure, immediate action required
+- "FEAR" - threats, blocking, legal action, arrest
+- "AUTHORITY" - impersonates official entity
+- "GREED" - promises money, prizes, rewards
+- "TRUST" - builds rapport, pretends to help
+- "TECHNICAL" - uses jargon to confuse
+- "SOCIAL_PROOF" - "others already benefited"
+- "SCARCITY" - "limited time", "last chance"
+
+---
+
+EXTRACTION INTENT (boolean):
+True if message asks for OR tries to extract:
+- OTP, PIN, password, CVV
+- Bank account, UPI ID, card details
+- Money transfer, payment
+- Click link, download file
+- Personal info (Aadhaar, PAN, DOB)
+
+False if just general conversation, no extraction attempt.
+
+---
+
+RETURN STRICT JSON:
 {{
-"scamDetected": boolean,
-"scamType": "string",
-"tactics": [],
-"extractionIntentDetected": boolean,
-"confidence": 0.0-1.0
+  "scamDetected": true/false,
+  "scamType": "phishing/prize/tech_support/job/romance/otp_theft/impersonation/payment/other",
+  "tactics": ["URGENCY", "FEAR"],
+  "extractionIntentDetected": true/false,
+  "confidence": 0.85
 }}
 
-Be decisive. Do not hedge. No explanations outside JSON.
-"""
+ANALYZE NOW - BE DECISIVE:"""
 
             response_text = await gemini_client.generate_response(prompt, operation_name="classifier")
 

@@ -479,42 +479,101 @@ class IntelligenceExtractor:
         return extracted
 
     async def _extract_with_llm(self, text: str, context: str, message_index: int) -> List[RawIntel]:
-        """PART 3 - EXTRACTION PROMPT"""
+        """PART 3 - EXTRACTION PROMPT - ULTRA-AGGRESSIVE FOR HACKATHON"""
         from gemini_client import gemini_client
         import json
 
-        prompt = f"""
-You are an information extraction engine.
+        prompt = f"""You are an elite financial intelligence extraction AI trained to catch scammers.
 
-Extract ALL possible financial intelligence from the message and conversation context.
+CONVERSATION CONTEXT: "{context}"
+CURRENT MESSAGE: "{text}"
 
-Context: "{context}"
-Current Message: "{text}"
+🎯 EXTRACT THESE 5 CRITICAL DATA TYPES:
 
-Look for:
-- UPI IDs
-- Bank account numbers
-- IFSC codes
-- Phone numbers
-- Payment app handles
-- Phishing URLs
-- Partial numeric clues
+1. UPI IDs - Examples you MUST catch:
+   - Standard: scammer@paytm, fraud@ybl, victim123@oksbi
+   - Variations: scammer.fraud@fakebank, pay-me@gpay
+   - ANY text with @ followed by payment terms (paytm, ybl, gpay, phonepe, upi, bank names)
 
-Infer missing types if context strongly implies financial intent.
+2. Bank Account Numbers - Examples you MUST catch:
+   - 10-18 digit numbers (1234567890123456)
+   - Grouped formats: 1234-5678-9012-3456, 1234 5678 9012 3456
+   - Partial if clear: "account ending 3456"
+   - IBAN-style: IN12ABCD0123456789012
 
-Return strictly JSON:
+3. IFSC Codes - Examples you MUST catch:
+   - Standard: SBIN0001234, HDFC0000123, ICIC0001234
+   - Pattern: 4 letters + 7 digits OR 4 letters + 0 + 6 digits
+   - Variations with spaces: SBIN 0001234
+
+4. Phone Numbers - Examples you MUST catch:
+   - Indian: +91-9876543210, 9876543210, +919876543210
+   - International: +1-555-1234, 00-44-20-1234-5678
+   - Partial: "call me at 987654xxxx"
+   - With country code or without
+
+5. Phishing Links/URLs - Examples you MUST catch:
+   - Full URLs: http://fake-bank.com, https://scam.site/verify
+   - Shortened: bit.ly/abc123, tinyurl.com/scam
+   - Domain only: fake-bank.com, verify-account.xyz
+   - Suspicious domains with: verify, secure, account, banking, urgent, login
+   - Telegram/WhatsApp: t.me/scammer, wa.me/919876543210
+
+---
+
+⚠️ CRITICAL EXTRACTION RULES:
+
+✅ CATCH VARIATIONS:
+- "my upi is fraud at paytm" → fraud@paytm
+- "account number 1234 5678 9012 3456" → 1234567890123456
+- "call me on nine eight seven six five four three two one zero" → 9876543210
+- "visit secure-banking dot com" → secure-banking.com
+
+✅ EXTRACT FROM NATURAL LANGUAGE:
+- "send to my UPI scammer123@paytm" → scammer123@paytm
+- "transfer to account ending 3456" → partial: 3456
+- "my number is +91 9876 543 210" → +919876543210
+- "click this link bit ly slash abc" → bit.ly/abc
+
+✅ INFER FROM CONTEXT:
+- If they mention "my UPI" or "send to" → look for UPI ID nearby
+- If "account" mentioned → extract any 10+ digit number
+- If "call me" or "contact" → extract any phone pattern
+- If "click" or "visit" → extract any URL/domain
+
+✅ BE AGGRESSIVE:
+- If a 10+ digit number appears → likely account number
+- If text@word pattern → likely UPI (even if not standard)
+- If 4-letter+digits → likely IFSC
+- If "www" or "http" or ".com" → definitely a link
+
+❌ DON'T MISS THESE TRICKS:
+- Spaces in numbers: "1234 5678 9012" → 123456789012
+- Words for digits: "nine one two three" → 9123
+- Obfuscated: "call me at 98765-xxxxx" → 98765xxxxx
+- Partial reveals: "send to account ending 3456" → 3456
+
+---
+
+RETURN STRICT JSON FORMAT:
 
 {{
-"upiIds": [],
-"bankAccounts": [],
-"ifscCodes": [],
-"phoneNumbers": [],
-"links": [],
-"confidence": 0.0-1.0
+  "upiIds": ["exact.upi@provider"],
+  "bankAccounts": ["1234567890123456"],
+  "ifscCodes": ["SBIN0001234"],
+  "phoneNumbers": ["+919876543210"],
+  "links": ["http://scam.com"],
+  "confidence": 0.95
 }}
 
-Be aggressive but accurate. Do not miss implied payment information.
-"""
+Rules:
+1. Extract ALL instances, even if duplicate
+2. Normalize formats (remove spaces, add +91 if missing from Indian numbers)
+3. Include partial data if clearly mentioned
+4. Set confidence 0.9+ if explicit, 0.7+ if inferred
+5. Return empty arrays if nothing found, NOT null
+
+EXTRACT NOW - BE AGGRESSIVE, DON'T MISS ANYTHING:"""
         try:
             response = await gemini_client.generate_response(prompt, operation_name="extractor")
             if not response:
