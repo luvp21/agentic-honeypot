@@ -22,14 +22,14 @@ else:
 
 class GeminiClient:
     def __init__(self):
-        # LEADERBOARD OPTIMIZATION: Low-variance configuration
+        # HYBRID OPTIMIZATION: Higher variance for natural extraction
         self.model = genai.GenerativeModel(
-            "models/gemini-2.5-flash",  # Updated to valid model name
+            "models/gemini-2.5-flash",
             generation_config={
-                "temperature": 0.2,  # Minimize variance for reproducibility
-                "max_output_tokens": 150,  # Short responses (1-2 sentences) - was 500
-                "top_p": 0.9,  # Nucleus sampling parameter
-                "top_k": 20   # Top-k sampling parameter
+                "temperature": 0.7,        # Higher for variety, prevents loops
+                "max_output_tokens": 200,  # Longer for complete sentences
+                "top_p": 0.95,             # Slightly higher for creativity
+                "top_k": 40                # More options to prevent repetition
             }
         )
 

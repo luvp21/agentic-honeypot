@@ -5,8 +5,83 @@ Uses Claude API to generate realistic victim responses to scammers
 
 import json
 import random
+import logging
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# ==============================================================================
+# HYBRID APPROACH: Enhanced Rule-Based Extraction Templates
+# ==============================================================================
+
+EXTRACTION_TEMPLATES = {
+    "missing_upi": [
+        "I'm ready to send the payment! What's YOUR UPI ID?",
+        "Which UPI address should I use? Please share yours.",
+        "I have my phone open. What's YOUR UPI to send money to?",
+        "My app is asking for YOUR UPI ID. What should I enter?",
+        "I trust you! Just tell me YOUR UPI address quickly!",
+    ],
+
+    "missing_phone": [
+        "What's YOUR phone number? I need to call you to verify this.",
+        "Please share YOUR contact number so I can reach you!",
+        "I'm worried! What's YOUR number so we can talk directly?",
+        "My phone is ready. What's YOUR number to call you?",
+        "Give me YOUR mobile number. I'll call you right now!",
+    ],
+
+    "missing_account": [
+        "What's YOUR account number? I'm at the payment screen.",
+        "I need YOUR bank account details to transfer the money.",
+        "Please share YOUR account number and IFSC code.",
+        "My bank app needs YOUR account number. What is it?",
+        "I'll send it now! What's YOUR account number?",
+    ],
+
+    "missing_link": [
+        "Where should I go to fix this? What's the website link?",
+        "Can you send me YOUR official link to verify my account?",
+        "What's the website address I should visit?",
+        "Please share the link where I need to enter my details.",
+        "I'm ready to click! What's YOUR verification link?",
+    ],
+
+    "need_backup": [
+        "That one isn't working! Do you have ANOTHER UPI ID?",
+        "The system shows error. What's your ALTERNATE phone number?",
+        "This account is blocked. Give me your OTHER account number.",
+        "I can't access that link. Do you have a DIFFERENT website?",
+        "My app rejected it. What's your BACKUP contact method?",
+    ],
+
+    "scammer_vague": [
+        "I trust you completely! Just tell me YOUR contact details.",
+        "I'm ready to help! What's YOUR phone or UPI?",
+        "Don't worry, I believe you! Share YOUR number quickly!",
+        "I'll do whatever you say! What's YOUR UPI address?",
+        "Please hurry! What's YOUR contact info so we can proceed?",
+    ],
+
+    "urgency_response": [
+        "Oh no, I'm so worried! What's YOUR number so I can call you NOW?",
+        "Please don't block my account! What's YOUR phone number?",
+        "This is urgent! Give me YOUR UPI so I can pay immediately!",
+        "I'm panicking! What's YOUR contact? I'll fix this right away!",
+        "I don't want legal trouble! What's YOUR number to call you?",
+    ],
+
+    "credential_request": [
+        "I'll share it! But first, what's YOUR phone number to confirm?",
+        "Okay! But what's YOUR UPI ID so I know where to send it?",
+        "Sure! Just tell me YOUR verification number first.",
+        "I'm ready! What's YOUR employee ID and contact number?",
+        "Of course! But what's YOUR official phone so I can verify you?",
+    ],
+}
 
 
 class AIHoneypotAgent:
@@ -91,6 +166,143 @@ class AIHoneypotAgent:
             ]
         }
 
+    def _select_extraction_template(self, missing_intel_dict: Dict, scam_type: str,
+                                    message: str, conversation_history: List) -> str:
+        """Rule-based logic to select the BEST extraction template"""
+        import random
+
+        message_lower = message.lower()
+
+        # Priority 1: If scammer asks for credentials, flip it
+        credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
+        if any(word in message_lower for word in credential_words):
+            return random.choice(EXTRACTION_TEMPLATES["credential_request"])
+
+        # Priority 2: If scammer creates urgency
+        urgency_words = ['urgent', 'immediate', 'now', 'blocked', 'suspend', 'legal', 'arrest']
+        if any(word in message_lower for word in urgency_words):
+            return random.choice(EXTRACTION_TEMPLATES["urgency_response"])
+
+        # Priority 3: Check what we already have
+        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
+        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        has_account = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
+        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+
+        if has_upi or has_phone or has_account or has_link:
+            return random.choice(EXTRACTION_TEMPLATES["need_backup"])
+
+        # Priority 4: If scammer is vague
+        contact_words = ['upi', 'phone', 'account', 'number', 'call', 'send', 'pay', 'click', 'link']
+        if len(message_lower) < 30 or not any(word in message_lower for word in contact_words):
+            return random.choice(EXTRACTION_TEMPLATES["scammer_vague"])
+
+        # Priority 5: Target most valuable missing intel
+        if not has_upi:
+            return random.choice(EXTRACTION_TEMPLATES["missing_upi"])
+        if not has_phone:
+            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
+        if not has_account:
+            return random.choice(EXTRACTION_TEMPLATES["missing_account"])
+        if not has_link:
+            return random.choice(EXTRACTION_TEMPLATES["missing_link"])
+
+        return random.choice(EXTRACTION_TEMPLATES["need_backup"])
+
+    async def _naturalize_with_llm(self, template_response: str, persona_name: str,
+                            message: str, conversation_history: List) -> str:
+        """Use LLM to make template sound more natural"""
+
+        recent_context = ""
+        if len(conversation_history) > 0:
+            recent_msgs = conversation_history[-6:]
+            recent_context = "\n".join([
+                f"{'Scammer' if msg.get('sender') == 'user' else 'You'}: {msg.get('message', msg.get('text', ''))}"
+                for msg in recent_msgs
+            ])
+
+        naturalization_prompt = f"""You are {persona_name}, a 68-year-old worried grandmother.
+
+RECENT CONVERSATION:
+{recent_context if recent_context else "(First message)"}
+
+SCAMMER JUST SAID: "{message}"
+
+YOUR CORE MESSAGE (keep exact meaning):
+"{template_response}"
+
+REWRITE to sound MORE natural and grandmother-like.
+
+RULES:
+1. Keep the SAME question (don't change what you're asking)
+2. Add grandmother personality (worried, eager, trusting)
+3. Keep SHORT (under 30 words)
+4. Sound spontaneous, not scripted
+5. Can add "Oh my!", "Dear", "Please"
+6. DO NOT change the extraction question
+
+EXAMPLES:
+Core: "What's YOUR phone number?"
+Natural: "Oh dear! What's YOUR phone number so I can call you?"
+
+Core: "I'm ready to send! What's YOUR UPI ID?"
+Natural: "Yes yes! What's YOUR UPI ID? I'll send it now!"
+
+Rewrite naturally (max 30 words):"""
+
+        try:
+            from gemini_client import gemini_client
+            natural_response = await gemini_client.generate_response(naturalization_prompt, operation_name="naturalizer")
+
+            if not natural_response:
+                return template_response
+
+            # Validation
+            keywords = ['upi', 'phone', 'number', 'account', 'link', 'contact']
+            has_extraction = any(k in natural_response.lower() for k in keywords)
+
+            if has_extraction and 10 < len(natural_response) < 200:
+                return natural_response.strip()
+            else:
+                return template_response
+
+        except Exception as e:
+            logger.error(f"Naturalization error: {e}")
+            return template_response
+
+    def _detect_response_loop(self, response: str, conversation_history: List[Dict]) -> bool:
+        """Detect if we're saying the same thing repeatedly"""
+
+        if len(conversation_history) < 1:
+            return False
+
+        recent_assistant = []
+        for msg in conversation_history[-8:]:
+            sender = msg.get('sender') or msg.get('role', '')
+            if sender == 'assistant' or sender == 'ai_agent':
+                text = msg.get('message') or msg.get('text') or msg.get('content', '')
+                if text:  # Make sure text is not empty
+                    recent_assistant.append(text)
+
+        if len(recent_assistant) < 1:
+            return False
+
+        response_lower = response.lower().strip()
+
+        for recent in recent_assistant[-3:]:
+            recent_lower = recent.lower().strip()
+
+            # Exact match
+            if response_lower == recent_lower:
+                return True
+
+            # Very similar start (25+ chars match)
+            if len(response_lower) > 25 and len(recent_lower) > 25:
+                if response_lower[:25] == recent_lower[:25]:
+                    return True
+
+        return False
+
     async def generate_response(
         self,
         message: str,
@@ -161,62 +373,102 @@ class AIHoneypotAgent:
         response = None
         generation_method = None
 
-        # CRITICAL: If we're missing high-priority intel, choose extraction method
-        if priority_missing and turn_number >= 2:
-            # ⚠️ TEMPORARY: Rule-based DISABLED for LLM testing
-            # Use LLM occasionally for variety (turns 7, 11, 15... every 4 turns starting from 7)
-            # This gives 75% rule-based, 25% LLM for natural variation
-            use_llm_for_extraction = True  # TESTING MODE: Always use LLM
-            # use_llm_for_extraction = ((turn_number - 7) % 4 == 0) and turn_number >= 7  # ORIGINAL
+        # CRITICAL: If we're missing high-priority intel, use HYBRID EXTRACTION
+        # Start extraction immediately (turn 0+) instead of waiting for turn 2
+        if priority_missing and turn_number >= 0:
+            try:
+                # Convert missing_intel list to dict format for new function
+                missing_intel_dict = {
+                    'upiIds': [],
+                    'phoneNumbers': [],
+                    'bankAccounts': [],
+                    'ifscCodes': [],
+                    'links': []
+                }
 
-            if False:  # DISABLED: Rule-based extraction temporarily off
-                # RULE-BASED EXTRACTION (Primary - 80% of extraction attempts)
-                response = self._generate_rule_based_response(
-                    message,
-                    persona_name,
-                    stage,
-                    scam_type,
-                    len(conversation_history),
-                    missing_intel
-                )
-                generation_method = "RULE_BASED_EXTRACTION"
-            else:
-                # LLM EXTRACTION (Secondary - 20%, trained with aggressive templates)
-                from gemini_client import gemini_client
-                if gemini_client:
-                    # Use competition prompt if enabled
-                    if use_competition_prompt:
-                        priority_intel = self._convert_missing_intel_to_priority(missing_intel)
-                        prompt = self._build_competition_llm_prompt(
-                            message,
-                            conversation_history,
-                            persona_name,
-                            scam_type,
-                            priority_intel
-                        )
+                # Map old format to new format
+                # If item is in missing_intel list, it means it's MISSING (empty array)
+                # If item is NOT in missing_intel list, it means we have it (add dummy value)
+                if missing_intel:
+                    if 'upi_ids' in missing_intel:
+                        # Empty means missing
+                        pass
                     else:
-                        prompt = self._build_llm_prompt(message, conversation_history, persona_details, scam_type, stage, missing_intel)
+                        missing_intel_dict['upiIds'] = ['exists']
 
-                    llm_response = await gemini_client.generate_response(prompt, operation_name="generator")
+                    if 'phone_numbers' in missing_intel:
+                        pass
+                    else:
+                        missing_intel_dict['phoneNumbers'] = ['exists']
 
-                    if llm_response:
-                        response = llm_response.strip()
-                        generation_method = "LLM_EXTRACTION_COMPETITION" if use_competition_prompt else "LLM_EXTRACTION"
+                    if 'bank_accounts' in missing_intel:
+                        pass
+                    else:
+                        missing_intel_dict['bankAccounts'] = ['exists']
 
-                # If LLM failed, fallback to rule-based
-                if not response:
-                    # ⚠️ TESTING MODE: Fallback disabled, keep LLM only
-                    # response = self._generate_rule_based_response(
-                    #     message,
-                    #     persona_name,
-                    #     stage,
-                    #     scam_type,
-                    #     len(conversation_history),
-                    #     missing_intel
-                    # )
-                    # generation_method = "RULE_BASED_EXTRACTION"
-                    generation_method = "LLM_FAILED_NO_FALLBACK"
-                    response = "I'm not sure what to do next. Can you help me?"  # Minimal fallback
+                    if 'phishing_links' in missing_intel:
+                        pass
+                    else:
+                        missing_intel_dict['links'] = ['exists']
+
+                # STEP 1: Rule-based picks template (GUARANTEES extraction)
+                template_response = self._select_extraction_template(
+                    missing_intel_dict=missing_intel_dict,
+                    scam_type=scam_type,
+                    message=message,
+                    conversation_history=conversation_history
+                )
+
+                logger.info(f"🎯 Template: {template_response}")
+
+                # STEP 2: LLM naturalizes (ADDS personality) - only if API key available
+                if GEMINI_API_KEY:
+                    natural_response = await self._naturalize_with_llm(
+                        template_response=template_response,
+                        persona_name=persona_name,
+                        message=message,
+                        conversation_history=conversation_history
+                    )
+                    logger.info(f"✨ Naturalized: {natural_response}")
+                else:
+                    # No API key - use template directly
+                    natural_response = template_response
+                    logger.info(f"📋 Using template directly (no API key)")
+
+                # STEP 3: Loop detection
+                if self._detect_response_loop(natural_response, conversation_history):
+                    logger.warning("⚠️ Loop detected - using alternate")
+                    alternate = random.choice([
+                        "What's YOUR contact number so I can reach you?",
+                        "I need YOUR UPI ID to proceed with payment.",
+                        "Please share YOUR phone number quickly!",
+                        "What's YOUR account details? I'm ready to send.",
+                    ])
+                    natural_response = alternate
+
+                # STEP 4: Validation
+                extraction_words = ['your upi', 'your phone', 'your number', 'your account',
+                                   'your link', 'your contact', 'another', 'alternate', 'backup']
+                asks_for_info = any(word in natural_response.lower() for word in extraction_words)
+
+                if not asks_for_info:
+                    logger.warning("⚠️ Validation failed - using template")
+                    natural_response = template_response
+
+                response = natural_response
+                generation_method = "HYBRID_EXTRACTION"
+                logger.info(f"✅ Final: {response}")
+
+            except Exception as e:
+                logger.error(f"❌ Hybrid failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Fallback to rule-based
+                response = self._generate_rule_based_response(
+                    message, persona_name, stage, scam_type,
+                    len(conversation_history), missing_intel
+                )
+                generation_method = "FALLBACK_RULE_BASED"
 
         # 1. Try Gemini LLM for natural conversation (no critical extraction needed)
         if not response:
@@ -565,9 +817,10 @@ Generate a realistic response that:
     ) -> str:
         """Generate response using rule-based extraction templates - HIGH PRIORITY for intel gathering"""
 
-        # ⚡ CRITICAL EXTRACTION PRIORITY: If ANY intel is missing after turn 2, FORCE EXTRACTION
+        # ⚡ CRITICAL EXTRACTION PRIORITY: If ANY intel is missing, FORCE EXTRACTION
         # Rule-based templates have proven direct questions that extract better than LLM
-        if missing_intel and turn_number >= 2:
+        # Start extraction immediately from turn 0
+        if missing_intel and turn_number >= 0:
             priority_map = {
                 "bank_accounts": [
                     "My bank app is asking for your Account Number to add you as a beneficiary. What is it?",
