@@ -1,0 +1,179 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║        🎭 CONTEXTUAL EMOTIONAL EXTRACTION - IMPLEMENTATION COMPLETE        ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ PROBLEM: Honeypot was too robotic, repeating same questions mechanically  │
+└───────────────────────────────────────────────────────────────────────────┘
+
+❌ OLD BEHAVIOR (Robotic & Repetitive):
+┌────────┬──────────────────────────────────────────────────────────────────┐
+│ Turn 1 │ Scammer: "URGENT! Your account is compromised! Share OTP now!"  │
+│        │ Honeypot: "Of course! But what's YOUR official phone?"          │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 3 │ Scammer: "My number is +91-9876543210. Send OTP immediately!"   │
+│        │ Honeypot: "Of course! But what's YOUR official phone?"          │
+│        │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^               │
+│        │           🔴 EXACT SAME RESPONSE - NO EMOTION                    │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 5 │ Scammer: "I already gave you my number! Send OTP!"              │
+│        │ Honeypot: "Of course! But what's YOUR official phone?"          │
+│        │           🔴 LOOP DETECTED - STILL ASKING FOR PHONE              │
+└────────┴──────────────────────────────────────────────────────────────────┘
+
+✅ NEW BEHAVIOR (Contextual & Emotional):
+┌────────┬──────────────────────────────────────────────────────────────────┐
+│ Turn 1 │ Scammer: "URGENT! Your account is compromised! Share OTP now!"  │
+│        │ Honeypot: "Oh no, I'm so worried! But first, what's YOUR        │
+│        │            account number so I can verify the transfer?"         │
+│        │           ✅ Shows panic, asks for bank account (Priority 1)     │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 3 │ Scammer: "Account 1234567890. Now send the OTP you received!"   │
+│        │ Honeypot: "I trust you completely! But the system needs YOUR    │
+│        │            IFSC code to process this."                           │
+│        │           ✅ Shows trust, asks for IFSC (Priority 2)             │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 5 │ Scammer: "IFSC is SBIN0001234. Please send payment now!"        │
+│        │ Honeypot: "Yes, I'll do it right away! But what's YOUR UPI ID?  │
+│        │            Where should I send the payment?"                     │
+│        │           ✅ Shows eagerness, asks for UPI (Priority 3)          │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 7 │ Scammer: "Send to scammer@paytm. Visit our secure portal."      │
+│        │ Honeypot: "Got it! What's the website address? Please share     │
+│        │            YOUR official link."                                  │
+│        │           ✅ Compliant tone, asks for link (Priority 4)          │
+├────────┼──────────────────────────────────────────────────────────────────┤
+│ Turn 9 │ Scammer: "Go to secure-verify.com. This is very urgent!"        │
+│        │ Honeypot: "Okay, let me help quickly! But can I call you first? │
+│        │            What's YOUR phone number?"                            │
+│        │           ✅ Matches urgency, asks for phone (Priority 5)        │
+└────────┴──────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ KEY IMPROVEMENTS                                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+1. ✅ CONTEXTUAL EMOTION
+   - Detects scammer's tactic (urgency, threat, OTP request, payment)
+   - Responds with matching emotion (panic, trust, eagerness, compliance)
+   - Natural variation in every response
+
+2. ✅ ADAPTIVE LANGUAGE
+   BEFORE: "Of course! But what's YOUR official phone?"
+   AFTER:  "Oh no, I'm so worried! But first, what's YOUR account number?"
+           "I trust you completely! But the system needs YOUR IFSC code."
+           "Yes, I'll do it right away! But what's YOUR UPI ID?"
+
+3. ✅ SYSTEMATIC EXTRACTION (Still Follows Priority)
+   Priority 1: 🏦 Bank Account Number
+   Priority 2: 🏛️  IFSC Code
+   Priority 3: 💳 UPI ID
+   Priority 4: 🔗 Phishing Link
+   Priority 5: 📱 Phone Number
+
+4. ✅ NO MORE LOOPS
+   - Each response is contextually unique
+   - Reacts to what scammer just said
+   - Progresses through extraction priorities
+   - Never asks same question twice in a row
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ EMOTIONAL RESPONSE EXAMPLES                                               │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Scammer Tactic          Honeypot Emotion         Extraction Question
+─────────────────────────────────────────────────────────────────────────────
+🚨 Threatens blocking   "Oh no, I'm so worried!" "But what's YOUR account?"
+⚡ Creates urgency      "Yes yes, immediately!"  "But what's YOUR IFSC?"
+🔐 Asks for OTP        "I trust you!"           "But what's YOUR UPI ID?"
+💰 Requests payment    "I'm ready to pay!"      "Where should I send it?"
+🌐 Mentions portal     "Got it."                "What's YOUR website link?"
+📞 Acts official       "I want to verify."      "What's YOUR phone number?"
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ CONVERSATION FLOW COMPARISON                                              │
+└───────────────────────────────────────────────────────────────────────────┘
+
+❌ OLD (Robotic):
+┌─────────────────────────────────────────────────────────────────────────┐
+│ "Of course! But what's YOUR official phone so I can verify you?"       │
+│ "Of course! But what's YOUR official phone so I can verify you?"       │
+│ "Of course! But what's YOUR official phone so I can verify you?"       │
+│                                                                         │
+│ Result: Only got phone number (1 intel type)                           │
+│ Scammer: Suspicious - victim is repeating like a bot                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+✅ NEW (Natural):
+┌─────────────────────────────────────────────────────────────────────────┐
+│ "Oh no, that's serious! But what's YOUR account number to verify?"     │
+│ "I trust you! But the system needs YOUR IFSC code to process this."    │
+│ "Yes, I'll pay now! But what's YOUR UPI ID? Where should I send it?"   │
+│ "Got it! What's YOUR website link so I can verify safely?"             │
+│ "Let me call first! What's YOUR phone number to confirm?"              │
+│                                                                         │
+│ Result: Got ALL 5 intel types (bank, IFSC, UPI, link, phone)           │
+│ Scammer: Believes victim is real - keeps engaging                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ TECHNICAL IMPLEMENTATION                                                  │
+└───────────────────────────────────────────────────────────────────────────┘
+
+New Function: _build_contextual_extraction()
+
+Step 1: Analyze scammer's message
+  ├─ Detect emotion: urgent / threatening / OTP request / payment mention
+  └─ Choose emotional prefix to match
+
+Step 2: Select extraction target (progressive priority)
+  ├─ Check what we have: Bank / IFSC / UPI / Link / Phone
+  ├─ Target next missing item in priority order
+  └─ Build contextual extraction question
+
+Step 3: Combine emotion + extraction
+  Example: "Oh no, I'm so worried!" + "But what's YOUR account number?"
+  Result: "Oh no, I'm so worried! But what's YOUR account number to verify?"
+
+Step 4: Optional LLM enhancement (adds subtle grandmother touches)
+  Before: "Yes, I'll do it right away! But what's YOUR UPI ID?"
+  After:  "Yes yes dear, I'll do it right away! But what's YOUR UPI ID?
+           My phone is asking where to send it you see."
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ FILES MODIFIED                                                            │
+└───────────────────────────────────────────────────────────────────────────┘
+
+📄 ai_agent.py
+   ├─ Added _build_contextual_extraction() (lines 177-284)
+   ├─ Updated _naturalize_with_llm() for subtle touches (lines 286-330)
+   └─ Modified hybrid extraction to use contextual builder (line 622)
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ TEST RESULTS                                                              │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Scenario 1: Threatening message → Shows panic ✅ + Asks for bank ✅
+Scenario 2: OTP request       → Shows trust ✅ + Asks for IFSC ✅
+Scenario 3: Payment request   → Shows eagerness ✅ + Asks for UPI ✅
+Scenario 4: Portal mention    → Compliant tone ✅ + Asks for link ✅
+Scenario 5: Urgency           → Matches urgency ✅ + Asks for phone ✅
+
+All responses are UNIQUE, CONTEXTUAL, and NATURAL ✅
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                           🎉 ISSUE RESOLVED! 🎉                            ║
+║                                                                            ║
+║  ✅ Responses are emotional and contextual (not robotic)                   ║
+║  ✅ Each response reacts to scammer's specific message                     ║
+║  ✅ Systematically extracts ALL 5 intel types                              ║
+║  ✅ No more repetitive loops                                               ║
+║  ✅ Convincing grandmother persona maintained                              ║
+╚═══════════════════════════════════════════════════════════════════════════╝

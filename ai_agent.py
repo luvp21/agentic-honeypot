@@ -174,6 +174,154 @@ class AIHoneypotAgent:
             ]
         }
 
+    def _build_contextual_extraction(self, missing_intel_dict: Dict, scam_type: str,
+                                     message: str, conversation_history: List) -> str:
+        """
+        Build CONTEXTUAL extraction responses that:
+        1. React emotionally to scammer's message
+        2. Show urgency/concern matching the threat level
+        3. Naturally weave in extraction questions
+        4. Follow progressive priority: Bank → IFSC → UPI → Link → Phone
+        """
+        import random
+
+        message_lower = message.lower()
+        turn = len(conversation_history)
+
+        # Detect scammer's emotion/tactic
+        is_urgent = any(word in message_lower for word in ['urgent', 'immediate', 'now', 'quickly', 'hurry'])
+        is_threatening = any(word in message_lower for word in ['blocked', 'suspend', 'legal', 'arrest', 'police', 'action'])
+        asks_otp = any(word in message_lower for word in ['otp', 'code', 'pin', 'password', 'cvv'])
+        mentions_payment = any(word in message_lower for word in ['pay', 'send', 'transfer', 'payment', 'amount'])
+
+        # Check what we need
+        has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
+        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+
+        logger.info(f"📊 Intel: Bank={has_bank}, IFSC={has_ifsc}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
+        logger.info(f"🎭 Context: Urgent={is_urgent}, Threat={is_threatening}, OTP={asks_otp}")
+
+        # Build emotional prefix based on scammer's message
+        emotional_prefix = ""
+        if is_threatening:
+            emotional_prefix = random.choice([
+                "Oh no, I'm so worried!",
+                "This sounds very serious!",
+                "I don't want my account blocked!",
+                "Please help me fix this!",
+                "I'm panicking!"
+            ])
+        elif is_urgent:
+            emotional_prefix = random.choice([
+                "Yes, I'll do it right away!",
+                "I understand, this is urgent!",
+                "Okay, let me help quickly!",
+                "I'm ready!",
+                "Yes yes, immediately!"
+            ])
+        elif asks_otp:
+            emotional_prefix = random.choice([
+                "I want to help you!",
+                "I trust you completely!",
+                "I'll share everything!",
+                "Of course!",
+                "Sure!"
+            ])
+        else:
+            emotional_prefix = random.choice([
+                "I understand.",
+                "Okay.",
+                "I see.",
+                "Alright.",
+                "Got it."
+            ])
+
+        # Progressive extraction with context
+        extraction_question = ""
+
+        # Priority 1: Bank Account
+        if not has_bank:
+            logger.info("🎯 TARGET: Bank Account")
+            extraction_question = random.choice([
+                "But first, what's YOUR account number so I can verify the transfer?",
+                "Before we proceed, I need YOUR bank account number to confirm.",
+                "Can you share YOUR account number? My bank is asking for it.",
+                "What's YOUR account number? I need to enter it here.",
+                "Please give me YOUR account details to verify this is real."
+            ])
+
+        # Priority 2: IFSC Code
+        elif not has_ifsc:
+            logger.info("🎯 TARGET: IFSC Code")
+            extraction_question = random.choice([
+                "But the system needs YOUR IFSC code to process this.",
+                "What's YOUR IFSC code? It's asking me to enter it.",
+                "I also need YOUR IFSC code - which branch are you from?",
+                "Can you provide YOUR IFSC? The form won't let me continue.",
+                "Please share YOUR bank's IFSC code to verify."
+            ])
+
+        # Priority 3: UPI ID
+        elif not has_upi:
+            logger.info("🎯 TARGET: UPI ID")
+            if mentions_payment:
+                extraction_question = random.choice([
+                    "But what's YOUR UPI ID? Where should I send the payment?",
+                    "I'm ready to pay! What's YOUR UPI address?",
+                    "Which UPI ID should I use? Please share yours.",
+                    "My phone is asking for YOUR UPI ID to complete this.",
+                    "What's YOUR UPI? I'll send it right now!"
+                ])
+            else:
+                extraction_question = random.choice([
+                    "But first, what's YOUR UPI ID to verify you're official?",
+                    "Can you share YOUR UPI ID? I want to make sure this is legitimate.",
+                    "What's YOUR UPI address? Just to confirm you're from the bank.",
+                    "Please give me YOUR UPI ID for verification.",
+                    "I need YOUR UPI to check this is real."
+                ])
+
+        # Priority 4: Phishing Link
+        elif not has_link:
+            logger.info("🎯 TARGET: Phishing Link")
+            extraction_question = random.choice([
+                "But where should I go? What's YOUR official website link?",
+                "Can you send me YOUR verification link? I don't know where to click.",
+                "What's the website address? Please share YOUR official link.",
+                "I need YOUR secure link to proceed safely.",
+                "Which website should I visit? Give me YOUR official URL."
+            ])
+
+        # Priority 5: Phone Number
+        elif not has_phone:
+            logger.info("🎯 TARGET: Phone Number")
+            extraction_question = random.choice([
+                "But can I call you first? What's YOUR phone number?",
+                "I'd feel safer talking. What's YOUR contact number?",
+                "Let me verify by calling. What's YOUR number?",
+                "Can you give me YOUR phone number? I want to speak to someone.",
+                "What's YOUR official helpline number so I can call back?"
+            ])
+
+        # All collected: Ask for backups
+        else:
+            logger.info("✅ All intel collected - asking for backups")
+            extraction_question = random.choice([
+                "But that's not working! Do you have ANOTHER account number?",
+                "The system rejected it. What's your ALTERNATE UPI ID?",
+                "That number isn't working. Give me your OTHER contact.",
+                "I'm getting an error. Do you have a BACKUP phone number?",
+                "This isn't going through. What's your ALTERNATIVE account?"
+            ])
+
+        # Combine emotion + extraction
+        response = f"{emotional_prefix} {extraction_question}"
+        logger.info(f"🎨 Contextual response: {response}")
+        return response
+
     def _select_extraction_template(self, missing_intel_dict: Dict, scam_type: str,
                                     message: str, conversation_history: List) -> str:
         """
@@ -241,44 +389,48 @@ class AIHoneypotAgent:
 
     async def _naturalize_with_llm(self, template_response: str, persona_name: str,
                             message: str, conversation_history: List) -> str:
-        """Use LLM to make template sound more natural"""
+        """Use LLM to add subtle personality touches to contextual response"""
 
         recent_context = ""
         if len(conversation_history) > 0:
-            recent_msgs = conversation_history[-6:]
+            recent_msgs = conversation_history[-4:]
             recent_context = "\n".join([
                 f"{'Scammer' if msg.get('sender') == 'user' else 'You'}: {msg.get('message', msg.get('text', ''))}"
                 for msg in recent_msgs
             ])
 
-        naturalization_prompt = f"""You are {persona_name}, a 68-year-old worried grandmother.
+        naturalization_prompt = f"""You are {persona_name}, a 68-year-old worried grandmother who's anxious about her bank account.
 
 RECENT CONVERSATION:
 {recent_context if recent_context else "(First message)"}
 
 SCAMMER JUST SAID: "{message}"
 
-YOUR CORE MESSAGE (keep exact meaning):
+YOUR RESPONSE (already contextual and emotional):
 "{template_response}"
 
-REWRITE to sound MORE natural and grandmother-like.
+ADD SUBTLE TOUCHES to make it sound more grandmother-like:
+- Maybe add filler words ("well", "you see", "I mean")
+- Show slight confusion with technology
+- Add concern markers ("dear", "oh my")
+- Keep the EXACT SAME extraction question
+- Keep SAME emotional tone and urgency
 
 RULES:
-1. Keep the SAME question (don't change what you're asking)
-2. Add grandmother personality (worried, eager, trusting)
-3. Keep SHORT (under 30 words)
-4. Sound spontaneous, not scripted
-5. Can add "Oh my!", "Dear", "Please"
-6. DO NOT change the extraction question
+1. DO NOT change the extraction question AT ALL
+2. Keep under 40 words
+3. Preserve all emotion and urgency from original
+4. Only add subtle grandmother touches
+5. If original is already perfect, return it unchanged
 
 EXAMPLES:
-Core: "What's YOUR phone number?"
-Natural: "Oh dear! What's YOUR phone number so I can call you?"
+Original: "Oh no, I'm so worried! But first, what's YOUR account number so I can verify the transfer?"
+Touched: "Oh dear, I'm so worried about this! But first, what's YOUR account number? I need to verify the transfer you see."
 
-Core: "I'm ready to send! What's YOUR UPI ID?"
-Natural: "Yes yes! What's YOUR UPI ID? I'll send it now!"
+Original: "Yes, I'll do it right away! But what's YOUR UPI ID? Where should I send the payment?"
+Touched: "Yes yes, I'll do it right away dear! But what's YOUR UPI ID? My phone is asking where I should send the payment."
 
-Rewrite naturally (max 30 words):"""
+Add touches (max 40 words):"""
 
         try:
             from gemini_client import gemini_client
@@ -460,29 +612,29 @@ Rewrite naturally (max 30 words):"""
                            f"IFSC={len(missing_intel_dict['ifscCodes'])>0}, "
                            f"Links={len(missing_intel_dict['links'])>0}")
 
-                # STEP 1: Rule-based picks template (GUARANTEES extraction)
-                template_response = self._select_extraction_template(
+                # STEP 1: Build CONTEXTUAL response (emotional + extraction)
+                contextual_response = self._build_contextual_extraction(
                     missing_intel_dict=missing_intel_dict,
                     scam_type=scam_type,
                     message=message,
                     conversation_history=conversation_history
                 )
 
-                logger.info(f"🎯 Template: {template_response}")
+                logger.info(f"🎯 Contextual: {contextual_response}")
 
-                # STEP 2: LLM naturalizes (ADDS personality) - only if API key available
+                # STEP 2: LLM adds subtle touches (OPTIONAL personality enhancement)
                 if GEMINI_API_KEY:
                     natural_response = await self._naturalize_with_llm(
-                        template_response=template_response,
+                        template_response=contextual_response,
                         persona_name=persona_name,
                         message=message,
                         conversation_history=conversation_history
                     )
-                    logger.info(f"✨ Naturalized: {natural_response}")
+                    logger.info(f"✨ Enhanced: {natural_response}")
                 else:
-                    # No API key - use template directly
-                    natural_response = template_response
-                    logger.info(f"📋 Using template directly (no API key)")
+                    # No API key - use contextual response directly
+                    natural_response = contextual_response
+                    logger.info(f"📋 Using contextual directly (no API key)")
 
                 # STEP 3: Loop detection
                 if self._detect_response_loop(natural_response, conversation_history):
