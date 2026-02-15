@@ -135,5 +135,5 @@ cd presentation_demo && ./run_presentation_demos.sh
 
 ---
 
-**Built for Hackathon 2026 - Intelligence Extraction System**  
+**Built for Hackathon 2026 - Intelligence Extraction System**
 **Status: ✅ Production Ready | 🎯 100% Tested | 🚀 Ready to Deploy**
