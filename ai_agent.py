@@ -42,6 +42,14 @@ EXTRACTION_TEMPLATES = {
         "I'll send it now! What's YOUR account number?",
     ],
 
+    "missing_ifsc": [
+        "It's asking for an IFSC code to verify the branch. What is yours?",
+        "I have the account number but I need the IFSC code to send the money.",
+        "Can you give me the 11-digit IFSC code? My bank says it's required.",
+        "The system won't proceed without an IFSC code. Which branch are you at?",
+        "I'm filling the form - it says IFSC code is mandatory. Can you share it?",
+    ],
+
     "missing_link": [
         "Where should I go to fix this? What's the website link?",
         "Can you send me YOUR official link to verify my account?",
@@ -168,93 +176,68 @@ class AIHoneypotAgent:
 
     def _select_extraction_template(self, missing_intel_dict: Dict, scam_type: str,
                                     message: str, conversation_history: List) -> str:
-        """Rule-based logic to select the BEST extraction template"""
+        """
+        PROGRESSIVE EXTRACTION: Systematically ask for each intel type in priority order
+        Priority: Bank Account → IFSC → UPI → Phishing Link → Phone
+        """
         import random
 
         message_lower = message.lower()
+        turn = len(conversation_history)
 
-        # Check what we've asked for recently (last 6 messages)
-        recent_questions = []
-        if conversation_history:
-            for msg in conversation_history[-6:]:
-                if msg.get('sender') == 'agent' or msg.get('role') == 'assistant':
-                    text = msg.get('message', msg.get('text', msg.get('content', ''))).lower()
-                    # Priority order: more specific first
-                    if 'account' in text or 'bank' in text or 'ifsc' in text:
-                        recent_questions.append('account')
-                    elif 'link' in text or 'website' in text:
-                        recent_questions.append('link')
-                    elif 'upi' in text:
-                        recent_questions.append('upi')
-                    elif 'phone' in text or 'number' in text or 'contact' in text or 'employee' in text:
-                        recent_questions.append('phone')
+        # Check what we DON'T have yet (empty means we're missing it)
+        has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
+        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+        has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
 
-        # Priority 1: If scammer asks for credentials, flip it
+        logger.info(f"📊 Intel status: Bank={has_bank}, IFSC={has_ifsc}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
+
+        # SPECIAL CASE 1: If scammer asks for credentials, flip it (ONLY if we have some intel already)
         credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
-        if any(word in message_lower for word in credential_words):
+        if any(word in message_lower for word in credential_words) and (has_bank or has_upi or has_phone):
+            logger.info("🔄 Credential flip strategy")
             return random.choice(EXTRACTION_TEMPLATES["credential_request"])
 
-        # Priority 2: If scammer creates urgency (first 3 turns only, then diversify)
-        urgency_words = ['urgent', 'immediate', 'now', 'blocked', 'suspend', 'legal', 'arrest']
-        if any(word in message_lower for word in urgency_words) and len(conversation_history) < 6:
+        # SPECIAL CASE 2: Urgency response ONLY if turn < 2 (very early) and we don't have critical intel yet
+        # After turn 2, prioritize systematic extraction over matching energy
+        urgency_words = ['urgent', 'immediate', 'blocked', 'suspend', 'legal', 'arrest']
+        if any(word in message_lower for word in urgency_words) and turn <= 1 and not (has_bank or has_upi):
+            logger.info("⚡ Urgency response strategy")
             return random.choice(EXTRACTION_TEMPLATES["urgency_response"])
 
-        # Priority 3: Check what's MISSING (empty arrays = missing, has values = extracted)
-        missing_upi = not missing_intel_dict.get('upiIds') or len(missing_intel_dict.get('upiIds', [])) == 0
-        missing_phone = not missing_intel_dict.get('phoneNumbers') or len(missing_intel_dict.get('phoneNumbers', [])) == 0
-        missing_account = not missing_intel_dict.get('bankAccounts') or len(missing_intel_dict.get('bankAccounts', [])) == 0
-        missing_link = not missing_intel_dict.get('links') or len(missing_intel_dict.get('links', [])) == 0
-        missing_ifsc = not missing_intel_dict.get('ifscCodes') or len(missing_intel_dict.get('ifscCodes', [])) == 0
+        # PROGRESSIVE EXTRACTION: Ask for each type in priority order
+        # This is the PRIMARY logic - always follow this order unless special cases above
 
-        # Priority 4: If scammer mentions specific payment method, ask for that
-        if 'upi' in message_lower and missing_upi and 'upi' not in recent_questions[-2:]:
-            return random.choice(EXTRACTION_TEMPLATES["missing_upi"])
-        if ('phone' in message_lower or 'call' in message_lower) and missing_phone and 'phone' not in recent_questions[-2:]:
-            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
-        if ('account' in message_lower or 'bank' in message_lower) and missing_account and 'account' not in recent_questions[-2:]:
+        # Priority 1: Bank Account Number (HIGHEST PRIORITY)
+        if not has_bank:
+            logger.info("🎯 TARGET: Bank Account Number")
             return random.choice(EXTRACTION_TEMPLATES["missing_account"])
-        if ('link' in message_lower or 'website' in message_lower or 'click' in message_lower) and missing_link and 'link' not in recent_questions[-2:]:
+
+        # Priority 2: IFSC Code (needed with account number)
+        if not has_ifsc:
+            logger.info("🎯 TARGET: IFSC Code")
+            return random.choice(EXTRACTION_TEMPLATES["missing_ifsc"])
+
+        # Priority 3: UPI ID (most common payment method)
+        if not has_upi:
+            logger.info("🎯 TARGET: UPI ID")
+            return random.choice(EXTRACTION_TEMPLATES["missing_upi"])
+
+        # Priority 4: Phishing Link (their infrastructure)
+        if not has_link:
+            logger.info("🎯 TARGET: Phishing Link")
             return random.choice(EXTRACTION_TEMPLATES["missing_link"])
 
-        # Priority 5: If scammer is vague, push back
-        contact_words = ['upi', 'phone', 'account', 'number', 'call', 'send', 'pay', 'click', 'link']
-        if len(message_lower) < 30 or not any(word in message_lower for word in contact_words):
-            return random.choice(EXTRACTION_TEMPLATES["scammer_vague"])
+        # Priority 5: Phone Number (backup contact)
+        if not has_phone:
+            logger.info("🎯 TARGET: Phone Number")
+            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
 
-        # Priority 6: Target TRULY MISSING intel (avoid repeating what we just asked)
-        # Build priority list of what's missing
-        missing_targets = []
-
-        # CRITICAL: Don't repeat same question type from last 2 turns
-        # Prioritize: account/IFSC > link > UPI > phone (rarest to most common)
-        if missing_account and 'account' not in recent_questions[-3:]:
-            missing_targets.append(('account', EXTRACTION_TEMPLATES["missing_account"]))
-
-        if missing_ifsc and 'account' not in recent_questions[-3:]:
-            missing_targets.append(('ifsc', EXTRACTION_TEMPLATES["missing_account"]))
-
-        if missing_link and 'link' not in recent_questions[-3:]:
-            missing_targets.append(('link', EXTRACTION_TEMPLATES["missing_link"]))
-
-        if missing_upi and 'upi' not in recent_questions[-3:]:
-            missing_targets.append(('upi', EXTRACTION_TEMPLATES["missing_upi"]))
-
-        if missing_phone and 'phone' not in recent_questions[-3:]:
-            missing_targets.append(('phone', EXTRACTION_TEMPLATES["missing_phone"]))
-
-        # Pick from truly missing targets (shuffle for variety)
-        if missing_targets:
-            random.shuffle(missing_targets)
-            _, template_list = missing_targets[0]
-            return random.choice(template_list)
-
-        # Priority 7: If we have some intel, ask for backups/alternates
-        has_some_intel = not missing_upi or not missing_phone or not missing_account or not missing_link
-        if has_some_intel:
-            return random.choice(EXTRACTION_TEMPLATES["need_backup"])
-
-        # Fallback: scammer being vague
-        return random.choice(EXTRACTION_TEMPLATES["scammer_vague"])
+        # ALL INTEL COLLECTED: Ask for backups/alternatives
+        logger.info("✅ All primary intel collected - requesting backups")
+        return random.choice(EXTRACTION_TEMPLATES["need_backup"])
 
     async def _naturalize_with_llm(self, template_response: str, persona_name: str,
                             message: str, conversation_history: List) -> str:
@@ -318,35 +301,52 @@ Rewrite naturally (max 30 words):"""
             return template_response
 
     def _detect_response_loop(self, response: str, conversation_history: List[Dict]) -> bool:
-        """Detect if we're saying the same thing repeatedly"""
+        """
+        Detect if we're saying the same thing repeatedly.
+        IMPROVED: Better field access and similarity detection
+        """
 
-        if len(conversation_history) < 1:
+        if len(conversation_history) < 2:
             return False
 
+        # Get last 4 assistant responses (increased from 3)
         recent_assistant = []
-        for msg in conversation_history[-8:]:
+        for msg in conversation_history[-12:]:  # Look back further
+            # Try multiple field names for compatibility
             sender = msg.get('sender') or msg.get('role', '')
-            if sender == 'assistant' or sender == 'ai_agent':
+            if sender in ['assistant', 'ai_agent', 'honeypot']:
                 text = msg.get('message') or msg.get('text') or msg.get('content', '')
-                if text:  # Make sure text is not empty
+                if text:
                     recent_assistant.append(text)
 
-        if len(recent_assistant) < 1:
+        if len(recent_assistant) < 2:
             return False
 
         response_lower = response.lower().strip()
 
-        for recent in recent_assistant[-3:]:
+        # Check similarity with recent responses
+        for recent in recent_assistant[-4:]:  # Check last 4 responses
             recent_lower = recent.lower().strip()
 
-            # Exact match
+            # Exact match = definite loop
             if response_lower == recent_lower:
+                logger.warning(f"🔴 EXACT LOOP: '{response[:50]}'")
                 return True
 
-            # Very similar start (25+ chars match)
-            if len(response_lower) > 25 and len(recent_lower) > 25:
-                if response_lower[:25] == recent_lower[:25]:
+            # Similar start (30+ chars) = likely loop
+            if len(response_lower) > 30 and len(recent_lower) > 30:
+                if response_lower[:30] == recent_lower[:30]:
+                    logger.warning(f"🔴 SIMILAR LOOP: '{response[:50]}'")
                     return True
+
+            # Core phrase matching (ignores filler words)
+            # Extract key phrases
+            response_core = ' '.join([w for w in response_lower.split() if len(w) > 3])
+            recent_core = ' '.join([w for w in recent_lower.split() if len(w) > 3])
+
+            if len(response_core) > 20 and response_core == recent_core:
+                logger.warning(f"🔴 CORE PHRASE LOOP: '{response[:50]}'")
+                return True
 
         return False
 
@@ -424,7 +424,8 @@ Rewrite naturally (max 30 words):"""
         # Start extraction immediately (turn 0+) instead of waiting for turn 2
         if priority_missing and turn_number >= 0:
             try:
-                # Convert missing_intel list to dict format for new function
+                # CRITICAL FIX: Populate dict with ACTUAL extracted data, not just placeholders
+                # The dict should contain what we HAVE, so template selector knows what's missing
                 missing_intel_dict = {
                     'upiIds': [],
                     'phoneNumbers': [],
@@ -433,30 +434,31 @@ Rewrite naturally (max 30 words):"""
                     'links': []
                 }
 
-                # Map old format to new format
-                # If item is in missing_intel list, it means it's MISSING (empty array)
-                # If item is NOT in missing_intel list, it means we have it (add dummy value)
+                # Populate with what we HAVE (inverse of missing_intel list)
+                # If item is NOT in missing_intel, we have it - add a marker
+                # If item IS in missing_intel, leave it empty (we're missing it)
                 if missing_intel:
-                    if 'upi_ids' in missing_intel:
-                        # Empty means missing
-                        pass
-                    else:
-                        missing_intel_dict['upiIds'] = ['exists']
+                    if 'upi_ids' not in missing_intel:
+                        missing_intel_dict['upiIds'] = ['extracted']  # We have this
 
-                    if 'phone_numbers' in missing_intel:
-                        pass
-                    else:
-                        missing_intel_dict['phoneNumbers'] = ['exists']
+                    if 'phone_numbers' not in missing_intel:
+                        missing_intel_dict['phoneNumbers'] = ['extracted']  # We have this
 
-                    if 'bank_accounts' in missing_intel:
-                        pass
-                    else:
-                        missing_intel_dict['bankAccounts'] = ['exists']
+                    if 'bank_accounts' not in missing_intel:
+                        missing_intel_dict['bankAccounts'] = ['extracted']  # We have this
 
-                    if 'phishing_links' in missing_intel:
-                        pass
-                    else:
-                        missing_intel_dict['links'] = ['exists']
+                    if 'ifsc_codes' not in missing_intel:
+                        missing_intel_dict['ifscCodes'] = ['extracted']  # We have this
+
+                    if 'phishing_links' not in missing_intel:
+                        missing_intel_dict['links'] = ['extracted']  # We have this
+
+                # Log current intel status for debugging
+                logger.info(f"📦 Intel Dict: UPI={len(missing_intel_dict['upiIds'])>0}, "
+                           f"Phone={len(missing_intel_dict['phoneNumbers'])>0}, "
+                           f"Bank={len(missing_intel_dict['bankAccounts'])>0}, "
+                           f"IFSC={len(missing_intel_dict['ifscCodes'])>0}, "
+                           f"Links={len(missing_intel_dict['links'])>0}")
 
                 # STEP 1: Rule-based picks template (GUARANTEES extraction)
                 template_response = self._select_extraction_template(
