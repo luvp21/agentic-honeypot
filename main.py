@@ -390,6 +390,10 @@ async def process_message(
             )
             logger.info(f"Using strategy {current_strategy} for {session_id}")
 
+            # CRITICAL FIX: Re-fetch session to get latest intel_graph state after extraction
+            # This ensures missing_intel reflects what was just extracted
+            session = session_manager.get_session(session_id)
+
             # Determine missing intelligence to guide agent
             missing_intel = []
             features = session.extracted_intelligence

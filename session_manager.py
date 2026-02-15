@@ -476,11 +476,21 @@ class SessionManager:
                 session.intel_graph[raw_item.type].append(new_item)
 
         # PRODUCTION REFINEMENT: Update last_new_intel_turn
+        # Reset stall counter if ANY intel was extracted (new or re-confirmed)
+        # This prevents premature finalization when scammer repeats info
         if new_intel_added:
             session.intel_stall_counter = 0
             session.last_new_intel_turn = session.message_count
             logger.info(
                 f"New intel extracted for {session_id} at turn {session.message_count}"
+            )
+        elif new_intel_list:  # Intel was extracted but it was duplicates
+            # Don't fully reset, but slow down the stall counter growth
+            # This acknowledges the scammer is still engaging with data
+            if session.intel_stall_counter > 0:
+                session.intel_stall_counter -= 1
+            logger.info(
+                f"Intel re-confirmed for {session_id} at turn {session.message_count} (stall counter: {session.intel_stall_counter})"
             )
 
         # Update backward compatibility dict
@@ -493,6 +503,11 @@ class SessionManager:
         for type_key, items in session.intel_graph.items():
             flat_dict[type_key] = [item.value for item in items]
         session.extracted_intelligence = flat_dict
+
+    def get_extracted_intel_types(self, session_id: str) -> List[str]:
+        """Get list of intelligence types that have been extracted."""
+        session = self.get_or_create_session(session_id)
+        return [intel_type for intel_type, items in session.intel_graph.items() if items]
 
     def should_send_callback(self, session_id: str, current_msg_index: int) -> dict:
         """
