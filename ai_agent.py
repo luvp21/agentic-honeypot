@@ -337,7 +337,7 @@ Example responses:
 Your emotional response (asking for {target}):"""
 
         try:
-            response = await self.gemini_client.generate_single_response(llm_prompt)
+            response = await self.gemini_client.generate_response(llm_prompt, operation_name="contextual_extraction")
             response = response.strip().strip('"').strip("'")
             logger.info(f"🤖 LLM Contextual: {response}")
             return response
@@ -843,7 +843,12 @@ Add touches (max 40 words):"""
 
                 if not asks_for_info:
                     logger.warning("⚠️ Validation failed - using template")
-                    natural_response = template_response
+                    natural_response = self._build_contextual_extraction_heuristic(
+    missing_intel_dict=missing_intel_dict,
+    scam_type=scam_type,
+    message=message,
+    conversation_history=conversation_history
+)
 
                 response = natural_response
                 generation_method = "HYBRID_EXTRACTION"
