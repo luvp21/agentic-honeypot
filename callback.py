@@ -15,7 +15,7 @@ from performance_logger import performance_logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Official callback endpoint
+# Official callback endpointc
 CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 
 
