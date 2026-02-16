@@ -445,6 +445,10 @@ async def process_message(
 
             if not features.get("phishing_links"):
                 missing_intel.append("phishing_links")
+            
+            # CRITICAL FIX: Add email to missing intel list
+            if not features.get("email_addresses"):
+                missing_intel.append("email_addresses")
 
             # Convert conversation history to agent format
             agent_history = []

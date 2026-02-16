@@ -963,6 +963,7 @@ Add touches (max 40 words):"""
                     'upiIds': [],
                     'phoneNumbers': [],
                     'bankAccounts': [],
+                    'emailAddresses': [],  # ADDED: Email support
                     'ifscCodes': [],
                     'links': []
                 }
@@ -980,6 +981,9 @@ Add touches (max 40 words):"""
                     if 'bank_accounts' not in missing_intel:
                         missing_intel_dict['bankAccounts'] = ['extracted']  # We have this
 
+                    if 'email_addresses' not in missing_intel:
+                        missing_intel_dict['emailAddresses'] = ['extracted']  # We have this
+
                     if 'ifsc_codes' not in missing_intel:
                         missing_intel_dict['ifscCodes'] = ['extracted']  # We have this
 
@@ -990,6 +994,7 @@ Add touches (max 40 words):"""
                 logger.info(f"📦 Intel Dict: UPI={len(missing_intel_dict['upiIds'])>0}, "
                            f"Phone={len(missing_intel_dict['phoneNumbers'])>0}, "
                            f"Bank={len(missing_intel_dict['bankAccounts'])>0}, "
+                           f"Email={len(missing_intel_dict.get('emailAddresses', []))>0}, "
                            f"IFSC={len(missing_intel_dict['ifscCodes'])>0}, "
                            f"Links={len(missing_intel_dict['links'])>0}")
 
