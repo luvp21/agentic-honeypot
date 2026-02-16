@@ -137,14 +137,6 @@ async def process_message(
 
         session = session_manager.get_or_create_session(session_id)
 
-        # CRITICAL: Reject messages for finalized sessions
-        if session.state == SessionStateEnum.FINALIZED:
-            logger.warning(f"🚫 Session {session_id} already finalized - rejecting message")
-            return HoneypotResponse(
-                status="success",
-                reply="Thank you for your message. This conversation has been concluded."
-            )
-
         # Store full message for backfill extraction
         session_manager.store_full_message(session_id, current_message)
 
