@@ -424,18 +424,19 @@ async def process_message(
             features = session.extracted_intelligence
 
             # Check if we have enough intel to terminate early (Success Condition)
-            # If we have Bank OR UPI AND Phone, we can consider wrapping up
+            # CRITICAL: Must have Bank OR UPI, Phone, AND Email before wrapping up
             has_payment = bool(features.get("bank_accounts") or features.get("upi_ids"))
             has_contact = bool(features.get("phone_numbers"))
+            has_email = bool(features.get("email_addresses"))  # Email is critical!
 
-            if has_payment and has_contact and total_messages > 8:
+            if has_payment and has_contact and has_email and total_messages > 8:
                  logger.info(f"Target intelligence acquired for {session_id}. Initiating wrap-up.")
                  # Could force a specific "wrap up" strategy or just let natural flow handle it
 
+            # Priority order: Bank → UPI → Phone → Links → Email (5 official fields only)
+            # IFSC removed - not part of official spec
             if not features.get("bank_accounts"):
                 missing_intel.append("bank_accounts")
-            elif not features.get("ifsc_codes"):
-                missing_intel.append("ifsc_codes")
 
             if not features.get("upi_ids"):
                 missing_intel.append("upi_ids")
@@ -446,7 +447,7 @@ async def process_message(
             if not features.get("phishing_links"):
                 missing_intel.append("phishing_links")
 
-            # CRITICAL FIX: Add email to missing intel list
+            # Email is one of the 5 official fields (more important than IFSC)
             if not features.get("email_addresses"):
                 missing_intel.append("email_addresses")
 

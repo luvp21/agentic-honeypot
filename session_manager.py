@@ -295,50 +295,52 @@ class SessionManager:
             )
             return True
 
-        # Criterion C: ENHANCED - Wait for ALL possible intel extraction
-        # Check all trackable intelligence types
+        # Criterion C: ENHANCED - Wait for 5 official intel fields extraction
+        # Check all critical intelligence types (5 official fields only)
         has_links = bool(session.intel_graph.get("phishing_links")) or bool(session.intel_graph.get("short_urls"))
-        has_ifsc = bool(session.intel_graph.get("ifsc_codes"))
         has_phone = bool(session.intel_graph.get("phone_numbers"))
         has_upi = bool(session.intel_graph.get("upi_ids"))
         has_bank = bool(session.intel_graph.get("bank_accounts"))
         has_email = bool(session.intel_graph.get("email_addresses"))
+        
+        # IFSC and telegram are bonus fields (not in official spec)
+        has_ifsc = bool(session.intel_graph.get("ifsc_codes"))
         has_telegram = bool(session.intel_graph.get("telegram_ids"))
 
-        # Count ALL intel types we've extracted
-        critical_count = sum([has_links, has_ifsc, has_phone, has_upi, has_bank, has_email, has_telegram])
+        # Count only critical intel types (5 official fields)
+        critical_count = sum([has_links, has_phone, has_upi, has_bank, has_email])
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
 
-        # If ANYTHING is missing from the critical 6 (phone, UPI, bank, email, IFSC, links), delay callback
-        # NEW: Added email to core critical types (was missing before!)
-        core_critical = [has_phone, has_upi, has_bank, has_email, has_ifsc, has_links]
+        # CORE CRITICAL 5: phone, UPI, bank, email, links (official spec only)
+        # IFSC removed - not part of official specification
+        core_critical = [has_phone, has_upi, has_bank, has_email, has_links]
         missing_count = sum(1 for x in core_critical if not x)
 
         # HIGH-PRIORITY intel types (most valuable for investigation)
-        high_priority = [has_links, has_phone, has_upi]
+        # Email added to high-priority list
+        high_priority = [has_links, has_phone, has_upi, has_email]
         high_priority_count = sum(1 for x in high_priority if x)
         missing_high_priority = sum(1 for x in high_priority if not x)
 
         # Only finalize if:
-        # 1. We have ALL 6 core critical types AND ALL 3 high-priority types AND reached turn 16+
-        #    (give more time to collect MULTIPLE items per high-value type)
-        # 2. We have ALL 6 types but missing high-priority → wait until turn 17
-        # 3. We have 5+ types AND reached turn 18 (very close to hard limit)
-        # PRIORITY: Links, Phone Numbers, UPI IDs are most valuable - wait longer to get multiples
+        # 1. We have ALL 5 core critical types AND ALL 4 high-priority types AND reached turn 16+
+        # 2. We have ALL 5 types but missing some high-priority → wait until turn 17
+        # 3. We have 4+ critical types AND reached turn 18 (very close to hard limit)
+        # PRIORITY: Links, Phone, UPI, Email are most valuable - wait longer to get them
 
         if missing_count == 0 and missing_high_priority == 0 and session.message_count >= 16:
             # Have everything including all high-priority types
             logger.info(
-                f"Session {session_id} extracted ALL 6 core intel types (including high-priority) at turn {session.message_count}"
+                f"Session {session_id} extracted ALL 5 core intel types (including high-priority) at turn {session.message_count}"
             )
             return True
         elif missing_count == 0 and session.message_count >= 17:
-            # Have all 6 types but give extra time for high-priority items
+            # Have all 5 types but give extra time for high-priority items
             logger.info(
-                f"Session {session_id} extracted ALL 6 core intel types at turn {session.message_count}"
+                f"Session {session_id} extracted ALL 5 core intel types at turn {session.message_count}"
             )
             return True
-        elif unique_intel_types >= 5 and session.message_count >= 18:
+        elif unique_intel_types >= 4 and session.message_count >= 18:
             logger.info(
                 f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (near limit)"
             )

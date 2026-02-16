@@ -51,14 +51,6 @@ EXTRACTION_TEMPLATES = {
         "What's YOUR company email? I want to be sure this is real.",
     ],
 
-    "missing_ifsc": [
-        "It's asking for an IFSC code to verify the branch. What is yours?",
-        "I have the account number but I need the IFSC code to send the money.",
-        "Can you give me the 11-digit IFSC code? My bank says it's required.",
-        "The system won't proceed without an IFSC code. Which branch are you at?",
-        "I'm filling the form - it says IFSC code is mandatory. Can you share it?",
-    ],
-
     "missing_link": [
         "Where should I go to fix this? What's the website link?",
         "Can you send me YOUR official link to verify my account?",
@@ -294,19 +286,18 @@ class AIHoneypotAgent:
         import random
 
         # Determine what to extract based on priority
-        # Priority: Account Number → Phone → UPI → Link → Email → IFSC (lowest)
+        # Priority: Account Number → Phone → UPI → Link → Email (5 official fields only)
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
-        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
-        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
+        has_email = missing_intel_dict.get('email_addresses') and len(missing_intel_dict.get('email_addresses', [])) > 0
 
         # NEW: Smart prioritization with skip logic (avoid infinite loops)
         # If we asked for something but didn't get it, skip to next priority
         skipped = session_state.skipped_intel_types if session_state else []
 
-        # Determine extraction target (Phone high priority, Email/IFSC lowest)
+        # Determine extraction target based on 5 official fields only
         # Skip types that we've already tried 2+ times without success
         target = None
         target_type = None
@@ -320,17 +311,14 @@ class AIHoneypotAgent:
         elif not has_upi and 'upiIds' not in skipped:
             target = "their UPI ID"
             target_type = "upiIds"
-        elif not has_link and 'links' not in skipped:
+        elif not has_link and 'phishing_links' not in skipped:
             target = "the phishing link they want you to visit"
-            target_type = "links"
-        elif not has_email and 'emailAddresses' not in skipped:
+            target_type = "phishing_links"
+        elif not has_email and 'email_addresses' not in skipped:
             target = "their email address for confirmation"
-            target_type = "emailAddresses"
-        elif not has_ifsc and 'ifscCodes' not in skipped:
-            target = "their IFSC code"
-            target_type = "ifscCodes"
+            target_type = "email_addresses"
         else:
-            # All priorities tried, circle back to skipped items
+            # All 5 official fields tried, circle back to skipped items
             if not has_bank:
                 target = "their bank account number"
                 target_type = "bankAccounts"
@@ -342,13 +330,10 @@ class AIHoneypotAgent:
                 target_type = "upiIds"
             elif not has_link:
                 target = "the phishing link"
-                target_type = "links"
+                target_type = "phishing_links"
             elif not has_email:
                 target = "their email address"
-                target_type = "emailAddresses"
-            elif not has_ifsc:
-                target = "their IFSC code"
-                target_type = "ifscCodes"
+                target_type = "email_addresses"
             else:
                 target = "backup/alternative account details"
                 target_type = "backup"
@@ -445,8 +430,8 @@ Your emotional response (asking for {target}):"""
             response_lower = response.lower()
             target_keywords = {
                 "bank account": ['account', 'bank'],
-                "IFSC code": ['ifsc', 'code', 'branch'],
                 "UPI ID": ['upi', 'id', 'payment'],
+                "email": ['email', 'address', 'mail'],
                 "verification link": ['link', 'website', 'url'],
                 "phone number": ['phone', 'number', 'call', 'contact']
             }
@@ -478,7 +463,7 @@ Your emotional response (asking for {target}):"""
         1. React emotionally to scammer's message
         2. Show urgency/concern matching the threat level
         3. Naturally weave in extraction questions
-        4. Follow progressive priority: Account Number → Phone → UPI → Link → Email → IFSC (lowest)
+        4. Follow progressive priority: Account Number → Phone → UPI → Link → Email (5 official fields)
         NEW: Skip to next priority if extraction fails (prevent infinite loops)
         """
         import random
@@ -492,18 +477,17 @@ Your emotional response (asking for {target}):"""
         asks_otp = any(word in message_lower for word in ['otp', 'code', 'pin', 'password', 'cvv'])
         mentions_payment = any(word in message_lower for word in ['pay', 'send', 'transfer', 'payment', 'amount'])
 
-        # Check what we need (Phone high priority, Email/IFSC lowest)
+        # Check what we need based on 5 official fields
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
-        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
-        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
+        has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
+        has_email = missing_intel_dict.get('email_addresses') and len(missing_intel_dict.get('email_addresses', [])) > 0
 
         # NEW: Get skipped intel types to avoid infinite loops
         skipped = session_state.skipped_intel_types if session_state else []
 
-        logger.info(f"📊 Intel: Bank={has_bank}, Phone={has_phone}, UPI={has_upi}, Link={has_link}, Email={has_email}, IFSC={has_ifsc}")
+        logger.info(f"📊 Intel: Bank={has_bank}, Phone={has_phone}, UPI={has_upi}, Link={has_link}, Email={has_email}")
         if skipped:
             logger.info(f"⏭️ Skipped types (failed extraction): {skipped}")
         logger.info(f"🎭 Context: Urgent={is_urgent}, Threat={is_threatening}, OTP={asks_otp}")
@@ -603,9 +587,9 @@ Your emotional response (asking for {target}):"""
                 ])
 
         # Priority 4: Phishing Link
-        elif not has_link and 'links' not in skipped:
+        elif not has_link and 'phishing_links' not in skipped:
             logger.info("🎯 TARGET: Phishing Link")
-            target_type = "links"
+            target_type = "phishing_links"
             extraction_question = random.choice([
                 "But where should I go? What's YOUR official website link?",
                 "Can you send me YOUR verification link? I don't know where to click.",
@@ -615,9 +599,9 @@ Your emotional response (asking for {target}):"""
             ])
 
         # Priority 5: Email Address
-        elif not has_email and 'emailAddresses' not in skipped:
+        elif not has_email and 'email_addresses' not in skipped:
             logger.info("🎯 TARGET: Email Address")
-            target_type = "emailAddresses"
+            target_type = "email_addresses"
             extraction_question = random.choice([
                 "But I need YOUR email address to confirm this transaction.",
                 "Can you share YOUR official email? I want to verify this is real.",
@@ -629,22 +613,7 @@ Your emotional response (asking for {target}):"""
                 "I see. What's YOUR email address to send the confirmation?"
             ])
 
-        # Priority 6: IFSC Code (LOWEST - only if everything else is extracted)
-        elif not has_ifsc and 'ifscCodes' not in skipped:
-            logger.info("🎯 TARGET: IFSC Code (final)")
-            target_type = "ifscCodes"
-            extraction_question = random.choice([
-                "But the system needs YOUR IFSC code to process this.",
-                "What's YOUR IFSC code? It's asking me to enter it.",
-                "I also need YOUR IFSC code - which branch are you from?",
-                "Can you provide YOUR IFSC? The form won't let me continue.",
-                "Please share YOUR bank's IFSC code to verify.",
-                "Okay, and what's YOUR branch IFSC for confirmation?",
-                "The app is asking for YOUR IFSC code. Which branch?",
-                "I see. To proceed, I need YOUR IFSC code please."
-            ])
-
-        # Circle back to skipped items (give them one more try)
+        # All 5 official fields attempted - circle back to skipped items
         elif not has_bank:
             logger.info("🔄 RETRY: Bank Account (from skipped list)")
             target_type = "bankAccounts"
@@ -667,14 +636,10 @@ Your emotional response (asking for {target}):"""
             extraction_question = "Please send me YOUR website link again."
         elif not has_email:
             logger.info("🔄 RETRY: Email (from skipped list)")
-            target_type = "emailAddresses"
+            target_type = "email_addresses"
             extraction_question = "What's YOUR email address one last time?"
-        elif not has_ifsc:
-            logger.info("🔄 RETRY: IFSC (from skipped list)")
-            target_type = "ifscCodes"
-            extraction_question = "I need YOUR IFSC code to finish."
 
-        # All collected: Ask for backups
+        # All 5 official fields collected: Ask for backups
         else:
             logger.info("✅ All intel collected - asking for backups")
             target_type = "backup"
@@ -699,22 +664,21 @@ Your emotional response (asking for {target}):"""
                                     message: str, conversation_history: List) -> str:
         """
         PROGRESSIVE EXTRACTION: Systematically ask for each intel type in priority order
-        Priority: Bank Account → Phone → UPI → Phishing Link → Email → IFSC (lowest)
+        Priority: Bank Account → Phone → UPI → Phishing Link → Email (5 official fields only)
         """
         import random
 
         message_lower = message.lower()
         turn = len(conversation_history)
 
-        # Check what we DON'T have yet (empty means we're missing it)
+        # Check what we DON'T have yet (5 official fields only)
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
-        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
+        has_email = missing_intel_dict.get('email_addresses') and len(missing_intel_dict.get('email_addresses', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
-        has_link = missing_intel_dict.get('links') and len(missing_intel_dict.get('links', [])) > 0
+        has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
-        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
-        logger.info(f"📊 Intel status: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}, IFSC={has_ifsc}")
+        logger.info(f"📊 Intel status: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
 
         # SPECIAL CASE 1: If scammer asks for credentials, flip it (ONLY if we have some intel already)
         credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
@@ -752,18 +716,13 @@ Your emotional response (asking for {target}):"""
             logger.info("🎯 TARGET: Phishing Link")
             return random.choice(EXTRACTION_TEMPLATES["missing_link"])
 
-        # Priority 5: Email Address
+        # Priority 5: Email Address (final of 5 official fields)
         if not has_email:
             logger.info("🎯 TARGET: Email Address")
             return random.choice(EXTRACTION_TEMPLATES["missing_email"])
 
-        # Priority 6: IFSC Code (LOWEST - only if everything else extracted)
-        if not has_ifsc:
-            logger.info("🎯 TARGET: IFSC Code (final)")
-            return random.choice(EXTRACTION_TEMPLATES["missing_ifsc"])
-
-        # ALL INTEL COLLECTED: Ask for backups/alternatives
-        logger.info("✅ All primary intel collected - requesting backups")
+        # ALL 5 OFFICIAL FIELDS COLLECTED: Ask for backups/alternatives
+        logger.info("✅ All 5 official fields collected - requesting backups")
         return random.choice(EXTRACTION_TEMPLATES["need_backup"])
 
     async def _naturalize_with_llm(self, template_response: str, persona_name: str,
@@ -963,9 +922,8 @@ Add touches (max 40 words):"""
                     'upiIds': [],
                     'phoneNumbers': [],
                     'bankAccounts': [],
-                    'emailAddresses': [],  # ADDED: Email support
-                    'ifscCodes': [],
-                    'links': []
+                    'email_addresses': [],
+                    'phishing_links': []
                 }
 
                 # Populate with what we HAVE (inverse of missing_intel list)
@@ -982,21 +940,17 @@ Add touches (max 40 words):"""
                         missing_intel_dict['bankAccounts'] = ['extracted']  # We have this
 
                     if 'email_addresses' not in missing_intel:
-                        missing_intel_dict['emailAddresses'] = ['extracted']  # We have this
-
-                    if 'ifsc_codes' not in missing_intel:
-                        missing_intel_dict['ifscCodes'] = ['extracted']  # We have this
+                        missing_intel_dict['email_addresses'] = ['extracted']  # We have this
 
                     if 'phishing_links' not in missing_intel:
-                        missing_intel_dict['links'] = ['extracted']  # We have this
+                        missing_intel_dict['phishing_links'] = ['extracted']  # We have this
 
-                # Log current intel status for debugging
+                # Log current intel status for debugging (5 official fields only)
                 logger.info(f"📦 Intel Dict: UPI={len(missing_intel_dict['upiIds'])>0}, "
                            f"Phone={len(missing_intel_dict['phoneNumbers'])>0}, "
                            f"Bank={len(missing_intel_dict['bankAccounts'])>0}, "
-                           f"Email={len(missing_intel_dict.get('emailAddresses', []))>0}, "
-                           f"IFSC={len(missing_intel_dict['ifscCodes'])>0}, "
-                           f"Links={len(missing_intel_dict['links'])>0}")
+                           f"Email={len(missing_intel_dict.get('email_addresses', []))>0}, "
+                           f"Links={len(missing_intel_dict['phishing_links'])>0}")
 
                 # INTELLIGENT HYBRID ROUTING: Choose LLM vs Heuristic based on situation
                 use_llm = self._should_use_llm_for_extraction(
