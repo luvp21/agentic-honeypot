@@ -406,11 +406,11 @@ class IntelligenceExtractor:
         message_lower = text.lower()
         context_window_lower = context_window.lower() if context_window else ""
         combined_context = message_lower + " " + context_window_lower
-        
+
         # Detect if conversation is about email or UPI
         has_email_context = any(word in combined_context for word in ["email", "e-mail", "mail", "gmail", "inbox", "send email", "email address", "official email"])
         has_upi_context = any(word in combined_context for word in ["upi", "pay", "payment", "send money", "transfer", "upi id", "upi address"])
-        
+
         # 2.3 UPI IDs (strict patterns first)
         handles_regex = "|".join(self.upi_handles)
         upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
@@ -464,7 +464,7 @@ class IntelligenceExtractor:
         email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
         for match in re.finditer(email_pattern, text):
             email = match.group()
-            
+
             # CONTEXT CHECK: If this looks like email AND has email context, prioritize email over UPI
             # Skip if it's actually a UPI ID (already extracted) UNLESS email context is strong
             if has_email_context:
