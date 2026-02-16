@@ -292,6 +292,7 @@ class AIHoneypotAgent:
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
         has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
         has_email = missing_intel_dict.get('email_addresses') and len(missing_intel_dict.get('email_addresses', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifsc_codes') and len(missing_intel_dict.get('ifsc_codes', [])) > 0
 
         # NEW: Smart prioritization with skip logic (avoid infinite loops)
         # If we asked for something but didn't get it, skip to next priority
@@ -613,7 +614,25 @@ Your emotional response (asking for {target}):"""
                 "I see. What's YOUR email address to send the confirmation?"
             ])
 
-        # All 5 official fields attempted - circle back to skipped items
+        # Priority 6: IFSC Code (BONUS - after 5 official fields)
+        elif not has_ifsc and 'ifsc_codes' not in skipped:
+            # Only ask for IFSC if we have bank account
+            if has_bank:
+                logger.info("🎯 TARGET: IFSC Code (bonus field)")
+                target_type = "ifsc_codes"
+                extraction_question = random.choice([
+                    "Perfect! And what's YOUR bank's IFSC code for verification?",
+                    "I also need YOUR branch IFSC code to complete this.",
+                    "Can you provide YOUR IFSC code? The form is asking for it.",
+                    "What's YOUR bank branch IFSC? I need it to proceed.",
+                    "Please share YOUR IFSC code so I can finalize this."
+                ])
+            else:
+                # Skip IFSC if no bank account
+                if session_state and 'ifsc_codes' not in session_state.skipped_intel_types:
+                    session_state.skipped_intel_types.append('ifsc_codes')
+
+        # All 5 official fields + bonus attempted - circle back to skipped items
         elif not has_bank:
             logger.info("🔄 RETRY: Bank Account (from skipped list)")
             target_type = "bankAccounts"
@@ -721,8 +740,24 @@ Your emotional response (asking for {target}):"""
             logger.info("🎯 TARGET: Email Address")
             return random.choice(EXTRACTION_TEMPLATES["missing_email"])
 
-        # ALL 5 OFFICIAL FIELDS COLLECTED: Ask for backups/alternatives
-        logger.info("✅ All 5 official fields collected - requesting backups")
+        # Priority 6: IFSC Code (BONUS - only if we have bank account)
+        has_ifsc = missing_intel_dict.get('ifsc_codes') and len(missing_intel_dict.get('ifsc_codes', [])) > 0
+        if not has_ifsc and has_bank:
+            logger.info("🎯 TARGET: IFSC Code (bonus)")
+            # Add IFSC template if not exists
+            if "missing_ifsc" not in EXTRACTION_TEMPLATES:
+                ifsc_templates = [
+                    "Perfect! And what's YOUR branch IFSC code?",
+                    "I also need YOUR bank's IFSC code for verification.",
+                    "Can you share YOUR IFSC? The system needs it.",
+                    "What's YOUR IFSC code to complete the transfer?"
+                ]
+            else:
+                ifsc_templates = EXTRACTION_TEMPLATES["missing_ifsc"]
+            return random.choice(ifsc_templates)
+
+        # ALL 5 OFFICIAL FIELDS + BONUS COLLECTED: Ask for backups/alternatives
+        logger.info("✅ All fields collected - requesting backups")
         return random.choice(EXTRACTION_TEMPLATES["need_backup"])
 
     async def _naturalize_with_llm(self, template_response: str, persona_name: str,
@@ -924,7 +959,8 @@ Add touches (max 40 words):"""
                     'phoneNumbers': [],
                     'bankAccounts': [],
                     'email_addresses': [],
-                    'phishing_links': []
+                    'phishing_links': [],
+                    'ifsc_codes': []  # Bonus field
                 }
 
                 # Populate with what we HAVE (inverse of missing_intel list)
@@ -946,12 +982,16 @@ Add touches (max 40 words):"""
                     if 'phishing_links' not in missing_intel:
                         missing_intel_dict['phishing_links'] = ['extracted']  # We have this
 
-                # Log current intel status for debugging (5 official fields only)
+                    if 'ifsc_codes' not in missing_intel:
+                        missing_intel_dict['ifsc_codes'] = ['extracted']  # We have this (bonus)
+
+                # Log current intel status for debugging (5 official + bonus fields)
                 logger.info(f"📦 Intel Dict: UPI={len(missing_intel_dict['upiIds'])>0}, "
                            f"Phone={len(missing_intel_dict['phoneNumbers'])>0}, "
                            f"Bank={len(missing_intel_dict['bankAccounts'])>0}, "
                            f"Email={len(missing_intel_dict.get('email_addresses', []))>0}, "
-                           f"Links={len(missing_intel_dict['phishing_links'])>0}")
+                           f"Links={len(missing_intel_dict['phishing_links'])>0}, "
+                           f"IFSC={len(missing_intel_dict.get('ifsc_codes', []))>0}")
 
                 # INTELLIGENT HYBRID ROUTING: Choose LLM vs Heuristic based on situation
                 use_llm = self._should_use_llm_for_extraction(

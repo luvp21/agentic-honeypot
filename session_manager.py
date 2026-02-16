@@ -302,7 +302,7 @@ class SessionManager:
         has_upi = bool(session.intel_graph.get("upi_ids"))
         has_bank = bool(session.intel_graph.get("bank_accounts"))
         has_email = bool(session.intel_graph.get("email_addresses"))
-        
+
         # IFSC and telegram are bonus fields (not in official spec)
         has_ifsc = bool(session.intel_graph.get("ifsc_codes"))
         has_telegram = bool(session.intel_graph.get("telegram_ids"))

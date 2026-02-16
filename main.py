@@ -451,6 +451,10 @@ async def process_message(
             if not features.get("email_addresses"):
                 missing_intel.append("email_addresses")
 
+            # IFSC is a bonus field (after 5 official fields, only if we have bank account)
+            if not features.get("ifsc_codes") and features.get("bank_accounts"):
+                missing_intel.append("ifsc_codes")
+
             # Convert conversation history to agent format
             agent_history = []
             for msg in conversation_history:
