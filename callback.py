@@ -192,7 +192,6 @@ def send_final_callback(
             sessionId=session_id,
             status=status,  # NEW - Required for 5 points
             scamDetected=scam_detected,
-            totalMessagesExchanged=total_messages,
             extractedIntelligence=intelligence,
             engagementMetrics=engagement_metrics,  # NEW - worth 2.5 points
             agentNotes=agent_notes

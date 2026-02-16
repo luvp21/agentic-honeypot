@@ -84,23 +84,27 @@ POST /api/honeypot/message
 
 ## 📊 Intelligence Output
 
-When finalized (15+ turns or 60s idle), sends callback with:
+When finalized, sends callback to GUVI platform with:
 
 ```json
 {
   "sessionId": "session-123",
+  "status": "completed",
   "scamDetected": true,
-  "totalMessagesExchanged": 18,
   "extractedIntelligence": {
-    "bankAccounts": ["9876543210123456"],
-    "upiIds": ["scammer.fraud@paytm"],
-    "phishingLinks": ["http://fake-bank.com"],
-    "phoneNumbers": ["9876543210"],
+    "phoneNumbers": ["+91-9876543210"],
+    "bankAccounts": ["1234567890123456"],
+    "upiIds": ["scammer.fraud@fakebank"],
+    "phishingLinks": ["http://malicious-site.com"],
+    "emailAddresses": ["scammer@fake.com"],
     "ifscCodes": ["HDFC0001234"],
     "suspiciousKeywords": ["urgent", "verify", "blocked"]
   },
-  "agentNotes": "Detected phishing scam. Engaged through 18 turns. Extracted 4 intel items. Scammer employed URGENCY, FEAR tactics. Communication in English. Aggression: high.",
-  "status": "final"
+  "engagementMetrics": {
+    "totalMessagesExchanged": 18,
+    "engagementDurationSeconds": 120
+  },
+  "agentNotes": "SUMMARY: BANK_FRAUD scam operation targeting elderly persona. Engagement spans 18 exchanges with 5 unique data points extracted. Extracted: Phone Numbers, Bank Accounts, UPI IDs. TACTICS: URGENCY, FEAR. AGGRESSION: High. PERFORMANCE: Successfully maintained 'Retired Teacher' persona using adaptive engagement strategies. No PII leaked. All extracted data is validated for evaluates."
 }
 ```
 
