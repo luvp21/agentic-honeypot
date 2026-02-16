@@ -699,7 +699,7 @@ Your emotional response (asking for {target}):"""
                                     message: str, conversation_history: List) -> str:
         """
         PROGRESSIVE EXTRACTION: Systematically ask for each intel type in priority order
-        Priority: Bank Account → IFSC → UPI → Phishing Link → Phone
+        Priority: Bank Account → Phone → UPI → Phishing Link → Email → IFSC (lowest)
         """
         import random
 
@@ -737,10 +737,10 @@ Your emotional response (asking for {target}):"""
             logger.info("🎯 TARGET: Bank Account Number")
             return random.choice(EXTRACTION_TEMPLATES["missing_account"])
 
-        # Priority 2: Email Address
-        if not has_email:
-            logger.info("🎯 TARGET: Email Address")
-            return random.choice(EXTRACTION_TEMPLATES["missing_email"])
+        # Priority 2: Phone Number (backup contact & verification)
+        if not has_phone:
+            logger.info("🎯 TARGET: Phone Number")
+            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
 
         # Priority 3: UPI ID (most common payment method)
         if not has_upi:
@@ -752,10 +752,10 @@ Your emotional response (asking for {target}):"""
             logger.info("🎯 TARGET: Phishing Link")
             return random.choice(EXTRACTION_TEMPLATES["missing_link"])
 
-        # Priority 5: Phone Number (backup contact)
-        if not has_phone:
-            logger.info("🎯 TARGET: Phone Number")
-            return random.choice(EXTRACTION_TEMPLATES["missing_phone"])
+        # Priority 5: Email Address
+        if not has_email:
+            logger.info("🎯 TARGET: Email Address")
+            return random.choice(EXTRACTION_TEMPLATES["missing_email"])
 
         # Priority 6: IFSC Code (LOWEST - only if everything else extracted)
         if not has_ifsc:
@@ -1137,7 +1137,8 @@ Add touches (max 40 words):"""
         missing_text = ", ".join(missing_intel) if missing_intel else "All key data collected"
 
         # Prioritize specific missing intel with extraction tactics
-        priority_order = ["phone_numbers", "upi_ids", "bank_accounts", "ifsc_codes", "phishing_links"]
+        # NEW ORDER: Account → Phone → UPI → Link → Email → IFSC (lowest)
+        priority_order = ["bank_accounts", "phone_numbers", "upi_ids", "phishing_links", "email_addresses", "ifsc_codes"]
         target_intel = "any financial details"
         extraction_tactic = "ask them to provide their information first"
 
@@ -1154,6 +1155,8 @@ Add touches (max 40 words):"""
                     extraction_tactic = "say the bank transfer failed without IFSC code, or ask which branch"
                 elif p_type == "phishing_links":
                     extraction_tactic = "say you can't find the website/link they mentioned, ask them to send it again"
+                elif p_type == "email_addresses":
+                    extraction_tactic = "say you need their official email for confirmation, or to send transaction receipt"
                 break
 
         # Build persona-specific traits
@@ -1199,6 +1202,12 @@ Link Extraction:
 - "I clicked the link but it says 'Page Not Found'. Do you have a different link?"
 - "My browser says this site can't be reached. Can you send me a backup link?"
 - "I accidentally closed the browser. Can you resend that website link?"
+
+Email Address Extraction:
+- "What's your official email address? I need it for the confirmation receipt."
+- "My bank wants your email ID to send the transaction details. Can you share it?"
+- "I want to verify you're legitimate. What's your company email address?"
+- "Can you give me your email? I'll forward you the payment confirmation."
 
 IFSC Code Extraction:
 - "It's asking for an IFSC code to verify the branch. What is yours?"
