@@ -29,34 +29,14 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     Returns:
         ExtractedIntelligence model with camelCase fields
     """
-    # Build 'other' dict for additional intelligence types
-    other_intel = {}
-
-    # Add telegram IDs if present
-    telegram_ids = extracted_data.get("telegram_ids", [])
-    if telegram_ids:
-        other_intel["telegramIds"] = telegram_ids
-
-    # Add short URLs if present
-    short_urls = extracted_data.get("short_urls", [])
-    if short_urls:
-        other_intel["shortUrls"] = short_urls
-
-    # Add QR mentions if present
-    qr_mentions = extracted_data.get("qr_mentions", [])
-    if qr_mentions:
-        other_intel["qrMentions"] = qr_mentions
-
-    # Create intelligence object
+# Map ONLY the 5 fields allowed by official specification
+    # Do NOT include: ifscCodes, suspiciousKeywords, other, etc.
     intelligence = ExtractedIntelligence(
         phoneNumbers=extracted_data.get("phone_numbers", []),
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
         phishingLinks=extracted_data.get("phishing_links", []),
-        emailAddresses=extracted_data.get("email_addresses", []),
-        ifscCodes=extracted_data.get("ifsc_codes", []),
-        suspiciousKeywords=extracted_data.get("suspicious_keywords", []),
-        other=other_intel if other_intel else {}  # Keep consistent structure
+        emailAddresses=extracted_data.get("email_addresses", [])
     )
 
     return intelligence
@@ -90,19 +70,13 @@ def generate_agent_notes(
     notes = f"SUMMARY: {scam_type.upper()} scam operation targeting elderly persona. "
     notes += f"Engagement spans {total_messages} exchanges with {intel_count} unique data points extracted. "
 
-    # 2. Intelligence Breakdown
+    # 2. Intelligence Breakdown (only official spec fields)
     intel_summary = []
     if intelligence.phoneNumbers: intel_summary.append("Phone Numbers")
     if intelligence.bankAccounts: intel_summary.append("Bank Accounts")
     if intelligence.upiIds: intel_summary.append("UPI IDs")
     if intelligence.phishingLinks: intel_summary.append("Phishing URLs")
     if intelligence.emailAddresses: intel_summary.append("Email Addresses")
-
-    # Add summary for 'other' intelligence
-    if intelligence.other:
-        if intelligence.other.get("shortUrls"): intel_summary.append("Short URLs")
-        if intelligence.other.get("telegramIds"): intel_summary.append("Telegram IDs")
-        if intelligence.other.get("qrMentions"): intel_summary.append("QR Codes")
 
     if intel_summary:
         notes += f"Extracted: {', '.join(intel_summary)}. "
