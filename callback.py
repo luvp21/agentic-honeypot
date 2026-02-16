@@ -29,14 +29,14 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     Returns:
         ExtractedIntelligence model with camelCase fields
     """
-# Map ONLY the 5 fields allowed by official specification
-    # Do NOT include: ifscCodes, suspiciousKeywords, other, etc.
+    # Map the 5 official fields + bonus field (IFSC)
     intelligence = ExtractedIntelligence(
         phoneNumbers=extracted_data.get("phone_numbers", []),
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
         phishingLinks=extracted_data.get("phishing_links", []),
-        emailAddresses=extracted_data.get("email_addresses", [])
+        emailAddresses=extracted_data.get("email_addresses", []),
+        ifscCodes=extracted_data.get("ifsc_codes", [])
     )
 
     return intelligence
@@ -53,26 +53,28 @@ def generate_agent_notes(
     Generate detailed agent notes for evaluation.
     Winner move: Provide deep psychological and tactical insights.
     """
-    # Count all intelligence fields (5 official spec fields)
+    # Count all intelligence fields (5 official spec fields + bonus)
     intel_count = (
         len(intelligence.bankAccounts) +
         len(intelligence.upiIds) +
         len(intelligence.phishingLinks) +
         len(intelligence.phoneNumbers) +
-        len(intelligence.emailAddresses)
+        len(intelligence.emailAddresses) +
+        len(intelligence.ifscCodes)
     )
 
     # 1. Summary of Attack Vector
     notes = f"SUMMARY: {scam_type.upper()} scam operation targeting elderly persona. "
     notes += f"Engagement spans {total_messages} exchanges with {intel_count} unique data points extracted. "
 
-    # 2. Intelligence Breakdown (only official spec fields)
+    # 2. Intelligence Breakdown (official spec fields + bonus)
     intel_summary = []
     if intelligence.phoneNumbers: intel_summary.append("Phone Numbers")
     if intelligence.bankAccounts: intel_summary.append("Bank Accounts")
     if intelligence.upiIds: intel_summary.append("UPI IDs")
     if intelligence.phishingLinks: intel_summary.append("Phishing URLs")
     if intelligence.emailAddresses: intel_summary.append("Email Addresses")
+    if intelligence.ifscCodes: intel_summary.append("IFSC Codes")
 
     if intel_summary:
         notes += f"Extracted: {', '.join(intel_summary)}. "

@@ -121,7 +121,7 @@ class ErrorResponse(BaseModel):
 class ExtractedIntelligence(BaseModel):
     """
     Intelligence data structure for final callback.
-    MATCHES OFFICIAL SPECIFICATION EXACTLY - only 5 fields allowed.
+    MATCHES OFFICIAL SPECIFICATION (5 fields) + BONUS FIELD (IFSC).
     Field names MUST be camelCase as per spec.
     """
     phoneNumbers: List[str] = Field(default_factory=list, description="Phone numbers")
@@ -129,6 +129,7 @@ class ExtractedIntelligence(BaseModel):
     upiIds: List[str] = Field(default_factory=list, description="Extracted UPI IDs")
     phishingLinks: List[str] = Field(default_factory=list, description="Phishing URLs")
     emailAddresses: List[str] = Field(default_factory=list, description="Email addresses")
+    ifscCodes: List[str] = Field(default_factory=list, description="IFSC codes (bonus field)")
 
 
 class EngagementMetrics(BaseModel):
