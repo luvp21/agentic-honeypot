@@ -405,7 +405,7 @@ class IntelligenceExtractor:
 # CONTEXT-BASED DETECTION: Check what honeypot just asked for
         message_lower = text.lower()
         context_window_lower = context_window.lower() if context_window else ""
-        
+
         # Enhanced detection: Check if honeypot JUST ASKED for email or UPI in previous message
         # Pattern: "what's YOUR email", "give me YOUR UPI", etc.
         honeypot_asked_for_email = any(phrase in context_window_lower for phrase in [
@@ -416,7 +416,7 @@ class IntelligenceExtractor:
             "your upi", "upi id", "upi address", "your payment", "send payment",
             "give me your upi", "share your upi", "which upi"
         ])
-        
+
         # Scammer's response context
         scammer_mentions_email = any(word in message_lower for word in [
             "email", "e-mail", "mail", "gmail", "inbox", "emailed", "official email",
@@ -425,7 +425,7 @@ class IntelligenceExtractor:
         scammer_mentions_upi = any(word in message_lower for word in [
             "upi", "payment", "pay to", "send to", "transfer to", "my upi is"
         ])
-        
+
         # Combine contexts for intelligent extraction
         # If honeypot asked for EMAIL → prioritize email extraction
         # If honeypot asked for UPI → prioritize UPI extraction
