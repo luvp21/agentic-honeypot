@@ -1,10 +1,16 @@
 """
-Intelligence extraction with context-aware patterns for accurate identification.
+Hybrid Intelligence Extraction Engine
+Uses regex + LLM for maximum recall
 """
 
 import re
+import asyncio
+import logging
+from typing import List, Dict, Set
 from dataclasses import dataclass
-from typing import List, Optional, Set
+from gemini_client import gemini_client
+
+logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # INDIAN PHONE NUMBER EXTRACTION MODULE
@@ -451,10 +457,20 @@ class IntelligenceExtractor:
             # Generic UPI pattern: anything@anything (minimum 2 chars each side)
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
-                val = match.group(1).lower()
+                raw_match = match.group(1)
+                val = raw_match.lower()
+
+                # CRITICAL FIX: Strip trailing punctuation (periods from sentences, commas, etc.)
+                # Scammer sends: "My UPI is scammer.fraud@fakebank." (with period)
+                # Without this, we'd extract: "scammer.fraud@fakebank." which is invalid
+                val = re.sub(r'[.,;:!?]+$', '', val)  # Remove trailing punctuation
+
+                # DEBUG: Log to trace truncation
+                logger.info(f"✅ UPI MATCH: raw='{raw_match}' → cleaned='{val}' (len={len(val)})")
 
                 # Skip if already extracted
                 if any(x.value == val and x.type == "upi_ids" for x in extracted):
+                    logger.debug(f"⏭️  Skipping duplicate UPI: {val}")
                     continue
 
                 # ONLY skip if it's OBVIOUSLY an email (has .com, .net, .org, .in, etc. TLD)
@@ -474,6 +490,7 @@ class IntelligenceExtractor:
                 # Extract as UPI - this will capture fakebank, testbank, paytm, ybl, etc.
                 confidence = 1.0 if (honeypot_asked_for_upi or "upi" in message_lower) else 0.9
                 source = "context_aware" if has_payment_context else "requested"
+                logger.info(f"✅ UPI EXTRACTED: '{val}' (len={len(val)}) from message_index={message_index}")
                 extracted.append(RawIntel("upi_ids", val, source, confidence, message_index))
 
         # 2.4 Phone Numbers (Enhanced Robust Logic)
