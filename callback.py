@@ -53,18 +53,14 @@ def generate_agent_notes(
     Generate detailed agent notes for evaluation.
     Winner move: Provide deep psychological and tactical insights.
     """
-    # Count primary intelligence fields
+    # Count all intelligence fields (5 official spec fields)
     intel_count = (
         len(intelligence.bankAccounts) +
         len(intelligence.upiIds) +
         len(intelligence.phishingLinks) +
-        len(intelligence.phoneNumbers)
+        len(intelligence.phoneNumbers) +
+        len(intelligence.emailAddresses)
     )
-
-    # Add counts from 'other' field if present
-    if intelligence.other:
-        for items in intelligence.other.values():
-            intel_count += len(items)
 
     # 1. Summary of Attack Vector
     notes = f"SUMMARY: {scam_type.upper()} scam operation targeting elderly persona. "
