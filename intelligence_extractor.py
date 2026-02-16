@@ -402,16 +402,30 @@ class IntelligenceExtractor:
                  has_context = bool(re.search(r'(?i)(account|bank|branch|ifsc)', context_window[-200:]))
             extracted.append(RawIntel("ifsc_codes", value, "context" if has_context else "strict", 1.0 if has_context else 0.5, message_index))
 
+        # CONTEXT-BASED DETECTION: Check message context to distinguish email vs UPI
+        message_lower = text.lower()
+        context_window_lower = context_window.lower() if context_window else ""
+        combined_context = message_lower + " " + context_window_lower
+        
+        # Detect if conversation is about email or UPI
+        has_email_context = any(word in combined_context for word in ["email", "e-mail", "mail", "gmail", "inbox", "send email", "email address", "official email"])
+        has_upi_context = any(word in combined_context for word in ["upi", "pay", "payment", "send money", "transfer", "upi id", "upi address"])
+        
         # 2.3 UPI IDs (strict patterns first)
         handles_regex = "|".join(self.upi_handles)
         upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
         for match in re.finditer(upi_pattern, text):
-            extracted.append(RawIntel("upi_ids", match.group(1), "strict", 1.0, message_index))
+            val = match.group(1)
+            # CONTEXT CHECK: If email context is strong and value has email domain, skip UPI extraction
+            if has_email_context and not has_upi_context:
+                if any(domain in val.lower() for domain in [".com", ".net", ".org", ".in", ".edu", ".gov"]):
+                    continue  # Let email pattern handle this
+            extracted.append(RawIntel("upi_ids", val, "strict", 1.0, message_index))
 
         # Generic UPI (fallback) - Must contain '@' and be surrounded by word boundaries
         # Trigger on payment/money context words
         has_payment_context = any(word in full_text.lower() for word in ["upi", "pay", "send", "transfer", "money", "account", "refund"])
-        if has_payment_context:
+        if has_payment_context and not has_email_context:  # Don't extract UPI if email context is strong
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
                 val = match.group(1)
@@ -445,16 +459,24 @@ class IntelligenceExtractor:
 
             extracted.append(RawIntel("phone_numbers", value, "strict", 1.0, message_index))
 
-        # 2.5 Email Addresses (NEW - for hackathon scoring)
+        # 2.5 Email Addresses (CONTEXT-AWARE - for hackathon scoring)
         # Pattern: standard email format (user@domain.com)
         email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
         for match in re.finditer(email_pattern, text):
             email = match.group()
-            # Skip if it's actually a UPI ID (already extracted)
-            if any(x.value == email and x.type == "upi_ids" for x in extracted):
-                continue
-            # Extract as email
-            extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
+            
+            # CONTEXT CHECK: If this looks like email AND has email context, prioritize email over UPI
+            # Skip if it's actually a UPI ID (already extracted) UNLESS email context is strong
+            if has_email_context:
+                # Strong email context - extract as email even if UPI was extracted
+                # Remove from UPI list if present
+                extracted = [x for x in extracted if not (x.value == email and x.type == "upi_ids")]
+                extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
+            else:
+                # No email context - only extract if not already extracted as UPI
+                if any(x.value == email and x.type == "upi_ids" for x in extracted):
+                    continue
+                extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
 
         # 2.6 Phishing Links (Legacy Strict)
         url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
