@@ -437,24 +437,32 @@ class IntelligenceExtractor:
         upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
         for match in re.finditer(upi_pattern, text):
             val = match.group(1)
-            # CONTEXT CHECK: If email context is strong and value has email domain, skip UPI extraction
-            if has_email_context and not has_upi_context:
+            # CONTEXT CHECK: If honeypot ASKED FOR EMAIL (not UPI), and value has email domain, skip UPI
+            # BUT if honeypot asked for UPI, extract regardless
+            if honeypot_asked_for_email and not honeypot_asked_for_upi:
                 if any(domain in val.lower() for domain in [".com", ".net", ".org", ".in", ".edu", ".gov"]):
                     continue  # Let email pattern handle this
             extracted.append(RawIntel("upi_ids", val, "strict", 1.0, message_index))
 
         # Generic UPI (fallback) - Must contain '@' and be surrounded by word boundaries
-        # Trigger on payment/money context words
+        # Trigger on payment/money context words OR when honeypot explicitly asks for UPI
         has_payment_context = any(word in full_text.lower() for word in ["upi", "pay", "send", "transfer", "money", "account", "refund"])
-        if has_payment_context and not has_email_context:  # Don't extract UPI if email context is strong
+        # Allow generic UPI if: (payment context AND no email context) OR honeypot asked for UPI
+        if (has_payment_context and not has_email_context) or honeypot_asked_for_upi:
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
                 val = match.group(1)
                 # Skip if already extracted
                 if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
-                # Skip common email domains - these are emails, not UPI IDs
-                if any(domain in val.lower() for domain in ["@gmail", "@yahoo", "@outlook", "@hotmail", "@live", "@fake", ".com", ".net", ".org", ".in"]):
-                    continue
+                # Skip common email domains - BUT if honeypot asked for UPI, be more lenient
+                if honeypot_asked_for_upi:
+                    # Only skip obvious emails when honeypot asked for UPI
+                    if any(domain in val.lower() for domain in ["@gmail.com", "@yahoo.com", "@outlook.com", "@hotmail.com"]):
+                        continue
+                else:
+                    # Stricter filter when honeypot didn't ask
+                    if any(domain in val.lower() for domain in ["@gmail", "@yahoo", "@outlook", "@hotmail", "@live", "@fake", ".com", ".net", ".org", ".in"]):
+                        continue
                 extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
         # 2.4 Phone Numbers (Enhanced Robust Logic)
