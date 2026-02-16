@@ -282,14 +282,16 @@ class SessionManager:
         has_phone = bool(session.intel_graph.get("phone_numbers"))
         has_upi = bool(session.intel_graph.get("upi_ids"))
         has_bank = bool(session.intel_graph.get("bank_accounts"))
+        has_email = bool(session.intel_graph.get("email_addresses"))
         has_telegram = bool(session.intel_graph.get("telegram_ids"))
 
         # Count ALL intel types we've extracted
-        critical_count = sum([has_links, has_ifsc, has_phone, has_upi, has_bank, has_telegram])
+        critical_count = sum([has_links, has_ifsc, has_phone, has_upi, has_bank, has_email, has_telegram])
         unique_intel_types = sum(1 for items in session.intel_graph.values() if items)
 
-        # If ANYTHING is missing from the critical 5 (phone, UPI, bank, IFSC, links), delay callback
-        core_critical = [has_phone, has_upi, has_bank, has_ifsc, has_links]
+        # If ANYTHING is missing from the critical 6 (phone, UPI, bank, email, IFSC, links), delay callback
+        # NEW: Added email to core critical types (was missing before!)
+        core_critical = [has_phone, has_upi, has_bank, has_email, has_ifsc, has_links]
         missing_count = sum(1 for x in core_critical if not x)
 
         # HIGH-PRIORITY intel types (most valuable for investigation)
@@ -298,25 +300,25 @@ class SessionManager:
         missing_high_priority = sum(1 for x in high_priority if not x)
 
         # Only finalize if:
-        # 1. We have ALL 5 core critical types AND ALL 3 high-priority types AND reached turn 16+
+        # 1. We have ALL 6 core critical types AND ALL 3 high-priority types AND reached turn 16+
         #    (give more time to collect MULTIPLE items per high-value type)
-        # 2. We have ALL 5 types but missing high-priority → wait until turn 17
-        # 3. We have 4+ types AND reached turn 18 (very close to hard limit)
+        # 2. We have ALL 6 types but missing high-priority → wait until turn 17
+        # 3. We have 5+ types AND reached turn 18 (very close to hard limit)
         # PRIORITY: Links, Phone Numbers, UPI IDs are most valuable - wait longer to get multiples
 
         if missing_count == 0 and missing_high_priority == 0 and session.message_count >= 16:
             # Have everything including all high-priority types
             logger.info(
-                f"Session {session_id} extracted ALL core intel types (including high-priority) at turn {session.message_count}"
+                f"Session {session_id} extracted ALL 6 core intel types (including high-priority) at turn {session.message_count}"
             )
             return True
         elif missing_count == 0 and session.message_count >= 17:
-            # Have all 5 types but give extra time for high-priority items
+            # Have all 6 types but give extra time for high-priority items
             logger.info(
-                f"Session {session_id} extracted ALL core intel types at turn {session.message_count}"
+                f"Session {session_id} extracted ALL 6 core intel types at turn {session.message_count}"
             )
             return True
-        elif unique_intel_types >= 4 and session.message_count >= 18:
+        elif unique_intel_types >= 5 and session.message_count >= 18:
             logger.info(
                 f"Session {session_id} extracted {unique_intel_types} intel types at turn {session.message_count} (near limit)"
             )
