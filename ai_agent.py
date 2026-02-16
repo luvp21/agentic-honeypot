@@ -10,6 +10,14 @@ import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
+# Import probing enhancer for better engagement
+try:
+    from probing_enhancement import probing_enhancer
+    PROBING_ENHANCER_AVAILABLE = True
+except ImportError:
+    PROBING_ENHANCER_AVAILABLE = False
+    logging.warning("⚠️ Probing enhancer not available")
+
 logger = logging.getLogger(__name__)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -1120,6 +1128,25 @@ Add touches (max 40 words):"""
 
         # Add realistic imperfections (deterministic based on turn count)
         response = self._add_realistic_touches(response, persona_name, turn_number)
+
+        # ENHANCEMENT: Apply probing enhancer for better engagement
+        try:
+            if PROBING_ENHANCER_AVAILABLE and scam_type and turn_number > 0:
+                # Get extracted intel from session (will be empty dict if not available)
+                extracted_intel = {}
+
+                # Enhance the response with follow-ups, rapport building, etc.
+                response = probing_enhancer.enhance_response(
+                    base_response=response,
+                    scam_type=scam_type,
+                    turn_number=turn_number,
+                    extracted_intel=extracted_intel,
+                    scammer_message=message,
+                    missing_intel=missing_intel or []
+                )
+                logger.info(f"✨ Enhanced response with probing techniques")
+        except Exception as e:
+            logger.warning(f"⚠️ Probing enhancer failed: {e}, using base response")
 
         return response
 

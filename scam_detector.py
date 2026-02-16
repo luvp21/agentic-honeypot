@@ -299,46 +299,82 @@ class ScamDetector:
     # ═══════════════════════════════════════════════════════════
     def _detect_strong_evidence_shortcut(self, text: str) -> bool:
         """
-        Detect high-confidence scam patterns that force Tier 1 classification.
+        ENHANCED: Detect high-confidence scam patterns that force Tier 1 classification.
         Even if regex_score < STRONG_THRESHOLD, these co-occurrences trigger immediate scam.
 
-        Shortcuts:
-        - OTP + urgency
-        - UPI + payment directive
-        - Account blocked + link
-        - Verify + immediate + bank
+        Enhanced shortcuts include more red-flag combinations to improve detection rate.
 
         Returns:
             True if strong evidence shortcut detected
         """
         text_lower = text.lower()
 
-        # Shortcut 1: OTP + Urgency
-        has_otp = any(term in text_lower for term in ["otp", "one time password", "verification code"])
-        has_urgency = any(term in text_lower for term in ["urgent", "immediately", "asap", "now", "hurry"])
+        # Shortcut 1: OTP/Credentials + Urgency
+        has_otp = any(term in text_lower for term in ["otp", "one time password", "verification code", "pin", "cvv", "password"])
+        has_urgency = any(term in text_lower for term in ["urgent", "immediately", "asap", "now", "hurry", "within", "expires"])
         if has_otp and has_urgency:
-            logger.info("🚨 [STRONG EVIDENCE] OTP + Urgency detected → Force Tier 1")
+            logger.info("🚨 [STRONG EVIDENCE] Credentials + Urgency detected → Force Tier 1")
             return True
 
-        # Shortcut 2: UPI + Payment Directive
-        has_upi = any(term in text_lower for term in ["upi", "paytm", "phonepe", "gpay"])
-        has_payment = any(term in text_lower for term in ["send", "transfer", "pay", "payment"])
+        # Shortcut 2: UPI/Payment + Action Directive
+        has_upi = any(term in text_lower for term in ["upi", "paytm", "phonepe", "gpay", "payment", "bank account"])
+        has_payment = any(term in text_lower for term in ["send", "transfer", "pay", "share your"])
         if has_upi and has_payment:
-            logger.info("🚨 [STRONG EVIDENCE] UPI + Payment detected → Force Tier 1")
+            logger.info("🚨 [STRONG EVIDENCE] Payment + Directive detected → Force Tier 1")
             return True
 
-        # Shortcut 3: Account Blocked + Link
-        has_blocked = any(term in text_lower for term in ["blocked", "suspended", "deactivated", "locked"])
-        has_link = "http" in text_lower or "bit.ly" in text_lower or "click here" in text_lower
+        # Shortcut 3: Account Threat + Link/Action
+        has_blocked = any(term in text_lower for term in ["blocked", "suspended", "deactivated", "locked", "compromised", "frozen"])
+        has_link = "http" in text_lower or "bit.ly" in text_lower or "click here" in text_lower or "click" in text_lower
         if has_blocked and has_link:
-            logger.info("🚨 [STRONG EVIDENCE] Account Blocked + Link detected → Force Tier 1")
+            logger.info("🚨 [STRONG EVIDENCE] Account Threat + Link detected → Force Tier 1")
             return True
 
-        # Shortcut 4: Verify + Immediate + Bank
-        has_verify = "verify" in text_lower or "confirm" in text_lower
-        has_bank = any(term in text_lower for term in ["bank", "account", "card"])
+        # Shortcut 4: Verify + Immediate + Financial
+        has_verify = "verify" in text_lower or "confirm" in text_lower or "update" in text_lower
+        has_bank = any(term in text_lower for term in ["bank", "account", "card", "financial", "transaction"])
         if has_verify and has_urgency and has_bank:
-            logger.info("🚨 [STRONG EVIDENCE] Verify + Immediate + Bank detected → Force Tier 1")
+            logger.info("🚨 [STRONG EVIDENCE] Verify + Urgency + Financial detected → Force Tier 1")
+            return True
+
+        # NEW Shortcut 5: Prize/Win + Action Required
+        has_prize = any(term in text_lower for term in ["won", "prize", "winner", "congratulations", "reward", "cashback"])
+        has_claim = any(term in text_lower for term in ["claim", "verify", "details", "share", "click"])
+        if has_prize and has_claim:
+            logger.info("🚨 [STRONG EVIDENCE] Prize + Claim Action detected → Force Tier 1")
+            return True
+
+        # NEW Shortcut 6: Suspicious Link Patterns
+        import re
+        suspicious_links = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', text_lower)
+        if suspicious_links:
+            for link in suspicious_links:
+                # Check for IP addresses or suspicious TLDs
+                if re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', link) or \
+                   any(tld in link for tld in ['.tk', '.ml', '.ga', '.cf', '.gq']) or \
+                   any(word in link for word in ['bit.ly', 'tinyurl', 'amaz0n', 'amaz']):
+                    logger.info("🚨 [STRONG EVIDENCE] Suspicious link pattern detected → Force Tier 1")
+                    return True
+
+        # NEW Shortcut 7: Authority Impersonation + Credential Request
+        has_authority = any(term in text_lower for term in ["officer", "official", "department", "agent", "government", "police"])
+        has_credential_req = any(term in text_lower for term in ["send", "provide", "share", "enter", "code"])
+        if has_authority and has_credential_req:
+            logger.info("🚨 [STRONG EVIDENCE] Authority + Credential Request detected → Force Tier 1")
+            return True
+
+        # NEW Shortcut 8: Multiple Exclamation Marks + Money/Prize
+        exclamation_count = text.count('!')
+        has_money = any(term in text_lower for term in ["rs.", "rupees", "₹", "money", "cash", "lakh", "crore"])
+        if exclamation_count >= 2 and (has_money or has_prize):
+            logger.info("🚨 [STRONG EVIDENCE] Excessive excitement + Money detected → Force Tier 1")
+            return True
+
+        # NEW Shortcut 9: Threat + Immediate Action
+        has_threat = any(term in text_lower for term in ["legal action", "arrest", "warrant", "court", "penalty", "fine"])
+        has_action = any(term in text_lower for term in ["immediately", "within", "hours", "today", "now"])
+        if has_threat and has_action:
+            logger.info("🚨 [STRONG EVIDENCE] Threat + Immediate Action detected → Force Tier 1")
             return True
 
         return False

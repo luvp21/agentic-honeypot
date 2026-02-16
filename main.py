@@ -10,6 +10,7 @@ from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
+import os
 from typing import Optional
 
 # Import models (official spec)
@@ -59,7 +60,10 @@ app.add_middleware(
 
 # API Key authentication
 API_KEY_NAME = "x-api-key"
-API_KEY = "honeypot-secret-key-123"  # In production: use environment variable
+API_KEY = os.environ.get("HONEYPOT_API_KEY", "honeypot-secret-key-123")  # Load from environment
+
+if API_KEY == "honeypot-secret-key-123":
+    logger.warning("⚠️ Using default API key! Set HONEYPOT_API_KEY environment variable for production.")
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
@@ -122,8 +126,12 @@ async def process_message(
         HoneypotResponse with status='success' and agent reply
     """
 
+    session_id = None
+    request_start_time = time.time()
+
     try:
-        request_start_time = time.time()
+        session_id = request.sessionId
+        logger.info(f"🔵 [PROCESSING] Session {session_id}")
 
         session_id = request.sessionId
         current_message = request.message
@@ -617,16 +625,31 @@ async def process_message(
         return response
 
     except Exception as e:
-        logger.error(f"❌ Error processing message for {session_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error processing message for session {session_id if session_id else 'UNKNOWN'}: {e}", exc_info=True)
 
         # HACKATHON: Log failed API request
-        if 'request_start_time' in locals():
-            api_response_time = time.time() - request_start_time
-            performance_logger.log_api_request(session_id, 0, api_response_time, "error")
+        try:
+            if 'request_start_time' in locals() and session_id:
+                api_response_time = time.time() - request_start_time
+                performance_logger.log_api_request(session_id, 0, api_response_time, "error")
+        except Exception as log_error:
+            logger.error(f"Failed to log error metrics: {log_error}")
+
+        # Return a fallback response instead of failing completely
+        error_message = str(e)
+        if "session_id" in locals() and session_id:
+            # Try to return a graceful fallback response
+            try:
+                return HoneypotResponse(
+                    status="success",
+                    reply="I'm sorry, I didn't quite understand that. Could you please repeat?"
+                )
+            except Exception:
+                pass
 
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: {error_message}"
         )
 
 
