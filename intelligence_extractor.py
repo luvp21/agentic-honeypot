@@ -402,14 +402,35 @@ class IntelligenceExtractor:
                  has_context = bool(re.search(r'(?i)(account|bank|branch|ifsc)', context_window[-200:]))
             extracted.append(RawIntel("ifsc_codes", value, "context" if has_context else "strict", 1.0 if has_context else 0.5, message_index))
 
-        # CONTEXT-BASED DETECTION: Check message context to distinguish email vs UPI
+# CONTEXT-BASED DETECTION: Check what honeypot just asked for
         message_lower = text.lower()
         context_window_lower = context_window.lower() if context_window else ""
-        combined_context = message_lower + " " + context_window_lower
-
-        # Detect if conversation is about email or UPI
-        has_email_context = any(word in combined_context for word in ["email", "e-mail", "mail", "gmail", "inbox", "send email", "email address", "official email"])
-        has_upi_context = any(word in combined_context for word in ["upi", "pay", "payment", "send money", "transfer", "upi id", "upi address"])
+        
+        # Enhanced detection: Check if honeypot JUST ASKED for email or UPI in previous message
+        # Pattern: "what's YOUR email", "give me YOUR UPI", etc.
+        honeypot_asked_for_email = any(phrase in context_window_lower for phrase in [
+            "your email", "your official email", "email address", "your company email",
+            "email id", "send email", "give me your email", "share your email"
+        ])
+        honeypot_asked_for_upi = any(phrase in context_window_lower for phrase in [
+            "your upi", "upi id", "upi address", "your payment", "send payment",
+            "give me your upi", "share your upi", "which upi"
+        ])
+        
+        # Scammer's response context
+        scammer_mentions_email = any(word in message_lower for word in [
+            "email", "e-mail", "mail", "gmail", "inbox", "emailed", "official email",
+            "my email is", "email is", "send to", "@gmail", "@yahoo"
+        ])
+        scammer_mentions_upi = any(word in message_lower for word in [
+            "upi", "payment", "pay to", "send to", "transfer to", "my upi is"
+        ])
+        
+        # Combine contexts for intelligent extraction
+        # If honeypot asked for EMAIL → prioritize email extraction
+        # If honeypot asked for UPI → prioritize UPI extraction
+        has_email_context = honeypot_asked_for_email or (scammer_mentions_email and not scammer_mentions_upi)
+        has_upi_context = honeypot_asked_for_upi or (scammer_mentions_upi and not scammer_mentions_email)
 
         # 2.3 UPI IDs (strict patterns first)
         handles_regex = "|".join(self.upi_handles)
