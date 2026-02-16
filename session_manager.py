@@ -257,7 +257,7 @@ class SessionManager:
 
         # Intelligent finalization based on turn count and intelligence gathered
         intel_count = sum(len(items) for items in session.intel_graph.values())
-        
+
         # Soft finalization: have good intel and reached soft limit (12 turns)
         if session.message_count >= self.SOFT_FINALIZE and intel_count >= 3:
             logger.info(
@@ -265,7 +265,7 @@ class SessionManager:
                 f"with {intel_count} intel items - finalizing"
             )
             return True
-        
+
         # Hard finalization: reached hard limit (18 turns) regardless of intel
         if session.message_count >= self.HARD_FINALIZE:
             logger.info(
