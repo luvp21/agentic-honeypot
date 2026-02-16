@@ -890,9 +890,10 @@ Add touches (max 40 words):"""
 
         # ELITE FIX: Override strategy if CRITICAL INTEL is missing
         # We want to force extraction (via LLM or Priority Rules) rather than just being "frustrated"
+        # Email is one of the 5 official critical fields!
         priority_missing = False
         if missing_intel:
-            for p_type in ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links"]:
+            for p_type in ["bank_accounts", "upi_ids", "phone_numbers", "phishing_links", "email_addresses"]:
                 if p_type in missing_intel:
                     priority_missing = True
                     break
