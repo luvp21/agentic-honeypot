@@ -285,9 +285,11 @@ class AIHoneypotAgent:
         return False
 
     async def _build_contextual_extraction_llm(self, missing_intel_dict: Dict, scam_type: str,
-                                               message: str, conversation_history: List) -> str:
+                                               message: str, conversation_history: List,
+                                               session_state: 'SessionState' = None) -> str:
         """
         LLM-BASED contextual extraction: Creative, adaptive responses using Gemini
+        NEW: Tracks extraction attempts and skips to next priority if scammer doesn't provide
         """
         import random
 
@@ -300,21 +302,60 @@ class AIHoneypotAgent:
         has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
         has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
+        # NEW: Smart prioritization with skip logic (avoid infinite loops)
+        # If we asked for something but didn't get it, skip to next priority
+        skipped = session_state.skipped_intel_types if session_state else []
+
         # Determine extraction target (Phone high priority, Email/IFSC lowest)
-        if not has_bank:
+        # Skip types that we've already tried 2+ times without success
+        target = None
+        target_type = None
+
+        if not has_bank and 'bankAccounts' not in skipped:
             target = "their bank account number"
-        elif not has_phone:
+            target_type = "bankAccounts"
+        elif not has_phone and 'phoneNumbers' not in skipped:
             target = "their phone number"
-        elif not has_upi:
+            target_type = "phoneNumbers"
+        elif not has_upi and 'upiIds' not in skipped:
             target = "their UPI ID"
-        elif not has_link:
+            target_type = "upiIds"
+        elif not has_link and 'links' not in skipped:
             target = "the phishing link they want you to visit"
-        elif not has_email:
+            target_type = "links"
+        elif not has_email and 'emailAddresses' not in skipped:
             target = "their email address for confirmation"
-        elif not has_ifsc:
+            target_type = "emailAddresses"
+        elif not has_ifsc and 'ifscCodes' not in skipped:
             target = "their IFSC code"
+            target_type = "ifscCodes"
         else:
-            target = "backup/alternative account details"
+            # All priorities tried, circle back to skipped items
+            if not has_bank:
+                target = "their bank account number"
+                target_type = "bankAccounts"
+            elif not has_phone:
+                target = "their phone number"
+                target_type = "phoneNumbers"
+            elif not has_upi:
+                target = "their UPI ID"
+                target_type = "upiIds"
+            elif not has_link:
+                target = "the phishing link"
+                target_type = "links"
+            elif not has_email:
+                target = "their email address"
+                target_type = "emailAddresses"
+            elif not has_ifsc:
+                target = "their IFSC code"
+                target_type = "ifscCodes"
+            else:
+                target = "backup/alternative account details"
+                target_type = "backup"
+
+        # Store what we're asking for this turn
+        if session_state:
+            session_state.last_extraction_target = target_type
 
         recent_context = ""
         if len(conversation_history) > 0:
@@ -426,10 +467,11 @@ Your emotional response (asking for {target}):"""
             logger.error(f"❌ LLM contextual extraction failed: {e}")
             logger.info("🔄 Falling back to heuristic extraction")
             # Fallback to heuristic
-            return self._build_contextual_extraction_heuristic(missing_intel_dict, scam_type, message, conversation_history)
+            return self._build_contextual_extraction_heuristic(missing_intel_dict, scam_type, message, conversation_history, session_state)
 
     def _build_contextual_extraction_heuristic(self, missing_intel_dict: Dict, scam_type: str,
-                                               message: str, conversation_history: List) -> str:
+                                               message: str, conversation_history: List,
+                                               session_state: 'SessionState' = None) -> str:
         """
         HEURISTIC-BASED contextual extraction: Fast, rule-based responses
         Build CONTEXTUAL extraction responses that:
@@ -437,6 +479,7 @@ Your emotional response (asking for {target}):"""
         2. Show urgency/concern matching the threat level
         3. Naturally weave in extraction questions
         4. Follow progressive priority: Account Number → Phone → UPI → Link → Email → IFSC (lowest)
+        NEW: Skip to next priority if extraction fails (prevent infinite loops)
         """
         import random
 
@@ -457,7 +500,12 @@ Your emotional response (asking for {target}):"""
         has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
         has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
+        # NEW: Get skipped intel types to avoid infinite loops
+        skipped = session_state.skipped_intel_types if session_state else []
+
         logger.info(f"📊 Intel: Bank={has_bank}, Phone={has_phone}, UPI={has_upi}, Link={has_link}, Email={has_email}, IFSC={has_ifsc}")
+        if skipped:
+            logger.info(f"⏭️ Skipped types (failed extraction): {skipped}")
         logger.info(f"🎭 Context: Urgent={is_urgent}, Threat={is_threatening}, OTP={asks_otp}")
 
         # Build emotional prefix based on scammer's message
@@ -497,10 +545,12 @@ Your emotional response (asking for {target}):"""
 
         # Progressive extraction with context
         extraction_question = ""
+        target_type = None
 
-        # Priority 1: Bank Account
-        if not has_bank:
+        # Priority 1: Bank Account (skip if already tried 2+ times)
+        if not has_bank and 'bankAccounts' not in skipped:
             logger.info("🎯 TARGET: Bank Account")
+            target_type = "bankAccounts"
             extraction_question = random.choice([
                 "But first, what's YOUR account number so I can verify the transfer?",
                 "Before we proceed, I need YOUR bank account number to confirm.",
@@ -513,8 +563,9 @@ Your emotional response (asking for {target}):"""
             ])
 
         # Priority 2: Phone Number
-        elif not has_phone:
+        elif not has_phone and 'phoneNumbers' not in skipped:
             logger.info("🎯 TARGET: Phone Number")
+            target_type = "phoneNumbers"
             extraction_question = random.choice([
                 "But can I call you first? What's YOUR phone number?",
                 "I'd feel safer talking. What's YOUR contact number?",
@@ -527,8 +578,9 @@ Your emotional response (asking for {target}):"""
             ])
 
         # Priority 3: UPI ID
-        elif not has_upi:
+        elif not has_upi and 'upiIds' not in skipped:
             logger.info("🎯 TARGET: UPI ID")
+            target_type = "upiIds"
             if mentions_payment:
                 extraction_question = random.choice([
                     "But what's YOUR UPI ID? Where should I send the payment?",
@@ -551,8 +603,9 @@ Your emotional response (asking for {target}):"""
                 ])
 
         # Priority 4: Phishing Link
-        elif not has_link:
+        elif not has_link and 'links' not in skipped:
             logger.info("🎯 TARGET: Phishing Link")
+            target_type = "links"
             extraction_question = random.choice([
                 "But where should I go? What's YOUR official website link?",
                 "Can you send me YOUR verification link? I don't know where to click.",
@@ -562,8 +615,9 @@ Your emotional response (asking for {target}):"""
             ])
 
         # Priority 5: Email Address
-        elif not has_email:
+        elif not has_email and 'emailAddresses' not in skipped:
             logger.info("🎯 TARGET: Email Address")
+            target_type = "emailAddresses"
             extraction_question = random.choice([
                 "But I need YOUR email address to confirm this transaction.",
                 "Can you share YOUR official email? I want to verify this is real.",
@@ -576,8 +630,9 @@ Your emotional response (asking for {target}):"""
             ])
 
         # Priority 6: IFSC Code (LOWEST - only if everything else is extracted)
-        elif not has_ifsc:
+        elif not has_ifsc and 'ifscCodes' not in skipped:
             logger.info("🎯 TARGET: IFSC Code (final)")
+            target_type = "ifscCodes"
             extraction_question = random.choice([
                 "But the system needs YOUR IFSC code to process this.",
                 "What's YOUR IFSC code? It's asking me to enter it.",
@@ -589,9 +644,40 @@ Your emotional response (asking for {target}):"""
                 "I see. To proceed, I need YOUR IFSC code please."
             ])
 
+        # Circle back to skipped items (give them one more try)
+        elif not has_bank:
+            logger.info("🔄 RETRY: Bank Account (from skipped list)")
+            target_type = "bankAccounts"
+            extraction_question = random.choice([
+                "I really need YOUR account number to verify this is legitimate.",
+                "Can you please share YOUR bank account one more time?",
+                "What's YOUR account number? This is critical."
+            ])
+        elif not has_phone:
+            logger.info("🔄 RETRY: Phone Number (from skipped list)")
+            target_type = "phoneNumbers"
+            extraction_question = "Can I have YOUR phone number to call you back?"
+        elif not has_upi:
+            logger.info("🔄 RETRY: UPI ID (from skipped list)")
+            target_type = "upiIds"
+            extraction_question = "What's YOUR UPI ID one more time?"
+        elif not has_link:
+            logger.info("🔄 RETRY: Phishing Link (from skipped list)")
+            target_type = "links"
+            extraction_question = "Please send me YOUR website link again."
+        elif not has_email:
+            logger.info("🔄 RETRY: Email (from skipped list)")
+            target_type = "emailAddresses"
+            extraction_question = "What's YOUR email address one last time?"
+        elif not has_ifsc:
+            logger.info("🔄 RETRY: IFSC (from skipped list)")
+            target_type = "ifscCodes"
+            extraction_question = "I need YOUR IFSC code to finish."
+
         # All collected: Ask for backups
         else:
             logger.info("✅ All intel collected - asking for backups")
+            target_type = "backup"
             extraction_question = random.choice([
                 "But that's not working! Do you have ANOTHER account number?",
                 "The system rejected it. What's your ALTERNATE UPI ID?",
@@ -599,6 +685,10 @@ Your emotional response (asking for {target}):"""
                 "I'm getting an error. Do you have a BACKUP phone number?",
                 "This isn't going through. What's your ALTERNATIVE account?"
             ])
+
+        # Store what we're asking for this turn
+        if session_state and target_type:
+            session_state.last_extraction_target = target_type
 
         # Combine emotion + extraction
         response = f"{emotional_prefix} {extraction_question}"
@@ -799,7 +889,8 @@ Add touches (max 40 words):"""
         missing_intel: List[str] = None,
         strategy: str = "DEFAULT",  # EngagementStrategyEnum value
         persona_name: Optional[str] = None,
-        use_competition_prompt: bool = True  # NEW: Enable advanced extraction prompt
+        use_competition_prompt: bool = True,  # NEW: Enable advanced extraction prompt
+        session_state: Optional['SessionState'] = None  # NEW: For extraction attempt tracking
     ) -> str:
         """
         Generate a realistic response to scammer's message
@@ -812,6 +903,7 @@ Add touches (max 40 words):"""
             strategy: Current engagement strategy to use
             persona_name: Override persona selection
             use_competition_prompt: Use advanced competition-level prompt (default: True)
+            session_state: Session state for extraction attempt tracking
 
         Returns:
             AI-generated response
@@ -915,7 +1007,8 @@ Add touches (max 40 words):"""
                         missing_intel_dict=missing_intel_dict,
                         scam_type=scam_type,
                         message=message,
-                        conversation_history=conversation_history
+                        conversation_history=conversation_history,
+                        session_state=session_state
                     )
                 else:
                     logger.info("⚡ INTELLIGENT ROUTING → Heuristic (direct scam/extraction phase)")
@@ -923,7 +1016,8 @@ Add touches (max 40 words):"""
                         missing_intel_dict=missing_intel_dict,
                         scam_type=scam_type,
                         message=message,
-                        conversation_history=conversation_history
+                        conversation_history=conversation_history,
+                        session_state=session_state
                     )
 
                 logger.info(f"🎯 Final response: {natural_response}")
@@ -947,11 +1041,12 @@ Add touches (max 40 words):"""
                 if not asks_for_info:
                     logger.warning("⚠️ Validation failed - using template")
                     natural_response = self._build_contextual_extraction_heuristic(
-    missing_intel_dict=missing_intel_dict,
-    scam_type=scam_type,
-    message=message,
-    conversation_history=conversation_history
-)
+                        missing_intel_dict=missing_intel_dict,
+                        scam_type=scam_type,
+                        message=message,
+                        conversation_history=conversation_history,
+                        session_state=session_state
+                    )
 
                 response = natural_response
                 generation_method = "HYBRID_EXTRACTION"

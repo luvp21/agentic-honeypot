@@ -197,6 +197,11 @@ class SessionState(BaseModel):
     strategy_level: int = 0                  # Strategy escalation ladder (0-3)
     last_new_intel_turn: int = 0             # Track when last NEW intel was found
 
+    # EXTRACTION TRACKING (NEW - prevents infinite loops on limited turns)
+    last_extraction_target: Optional[str] = None  # What intel type we just asked for
+    extraction_attempts: Dict[str, int] = Field(default_factory=dict)  # Count failed attempts per type
+    skipped_intel_types: List[str] = Field(default_factory=list)  # Types we've tried but failed
+
     # Behavioral Profiling (NEW)
     scammer_profile: ScammerProfile = Field(default_factory=ScammerProfile)
 

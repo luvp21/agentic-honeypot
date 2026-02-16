@@ -177,6 +177,31 @@ async def process_message(
             found_types = list(set([x.type for x in extracted_list]))
             logger.info(f"Intelligence extracted for {session_id}: {found_types}")
 
+            # NEW: Check if we got the intel we asked for in previous turn
+            if session.last_extraction_target and session.last_extraction_target != "backup":
+                # Reset attempts for this type since we got it
+                if session.last_extraction_target in [x.type for x in extracted_list]:
+                    logger.info(f"✅ Got requested intel: {session.last_extraction_target}")
+                    session.extraction_attempts[session.last_extraction_target] = 0
+                    # Remove from skipped list if present
+                    if session.last_extraction_target in session.skipped_intel_types:
+                        session.skipped_intel_types.remove(session.last_extraction_target)
+        else:
+            # NEW: No intel extracted - increment attempt counter for what we asked for
+            if session.last_extraction_target and session.last_extraction_target != "backup":
+                current_attempts = session.extraction_attempts.get(session.last_extraction_target, 0)
+                session.extraction_attempts[session.last_extraction_target] = current_attempts + 1
+
+                # After 2 failed attempts, skip to next priority
+                if session.extraction_attempts[session.last_extraction_target] >= 2:
+                    if session.last_extraction_target not in session.skipped_intel_types:
+                        session.skipped_intel_types.append(session.last_extraction_target)
+                        logger.info(f"⏭️ Skipping {session.last_extraction_target} after {session.extraction_attempts[session.last_extraction_target]} failed attempts")
+
+        if extracted_list:
+            # Log what was found (moved after attempt tracking)
+            found_types = list(set([x.type for x in extracted_list]))
+
             # HACKATHON: Log extraction
             performance_logger.log_intelligence_extraction(session_id, total_messages, extracted_list, "CONTINUOUS")
 
@@ -444,7 +469,8 @@ async def process_message(
                 scam_type=session.scam_type,
                 missing_intel=missing_intel,
                 strategy=current_strategy,
-                persona_name=session.persona_name
+                persona_name=session.persona_name,
+                session_state=session  # NEW: Pass session for extraction tracking
             )
 
             # PRODUCTION REFINEMENT: Validate and sanitize with guardrails
