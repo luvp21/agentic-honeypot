@@ -445,7 +445,7 @@ async def process_message(
 
             if not features.get("phishing_links"):
                 missing_intel.append("phishing_links")
-            
+
             # CRITICAL FIX: Add email to missing intel list
             if not features.get("email_addresses"):
                 missing_intel.append("email_addresses")
@@ -551,9 +551,6 @@ async def process_message(
             callback_type = callback_status["type"]
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
-            # Calculate engagement duration (CRITICAL for hackathon scoring - 10 points)
-            engagement_duration = session_manager.calculate_engagement_duration(session_id)
-
             # Send callback with scammer profile
             # ELITE FIX: total_messages reflects (history + current_message).
             # We add 1 to account for the agent_response we just generated.
@@ -564,9 +561,7 @@ async def process_message(
                 extracted_intelligence=session.extracted_intelligence,
                 scam_type=session.scam_type,
                 scammer_profile=session.scammer_profile,
-                engagement_duration_seconds=engagement_duration,  # NEW: for 10 points
-                max_retries=3,
-                status=callback_type
+                max_retries=3
             )
 
             if callback_success:
@@ -776,9 +771,7 @@ async def check_idle_sessions(api_key: str = Depends(verify_api_key)):
                     extracted_intelligence=session.extracted_intelligence,
                     scam_type=session.scam_type,
                     scammer_profile=session.scammer_profile,
-                    engagement_duration_seconds=engagement_duration,  # NEW
-                    max_retries=3,
-                    status=callback_status["type"]
+                    max_retries=3
                 )
 
                 if callback_success:

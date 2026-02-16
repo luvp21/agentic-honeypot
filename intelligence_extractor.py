@@ -1,16 +1,10 @@
 """
-Hybrid Intelligence Extraction Engine
-Uses regex + LLM for maximum recall
+Intelligence extraction with context-aware patterns for accurate identification.
 """
 
 import re
-import asyncio
-import logging
-from typing import List, Dict, Set
 from dataclasses import dataclass
-from gemini_client import gemini_client
-
-logger = logging.getLogger(__name__)
+from typing import List, Optional, Set
 
 # ═══════════════════════════════════════════════════════════════════════════
 # INDIAN PHONE NUMBER EXTRACTION MODULE
@@ -320,11 +314,10 @@ class IntelligenceExtractor:
     """
 
     def __init__(self):
-        # Allowlist for UPI handles (including test handles for evaluation)
+        # Allowlist for UPI handles
         self.upi_handles = [
             "oksbi", "okaxis", "okicici", "paytm", "upi", "ybl", "ibl", "axl",
-            "hdfcbank", "sbi", "icici", "kotak", "axisbank", "freecharge",
-            "fakebank", "fakeupi", "testbank", "scambank"  # Test handles for hackathon evaluation
+            "hdfcbank", "sbi", "icici", "kotak", "axisbank", "freecharge"
         ]
 
         # Blacklist patterns (OTP, etc.)
@@ -439,59 +432,38 @@ class IntelligenceExtractor:
         has_email_context = honeypot_asked_for_email or (scammer_mentions_email and not scammer_mentions_upi)
         has_upi_context = honeypot_asked_for_upi or (scammer_mentions_upi and not scammer_mentions_email)
 
-        # 2.3 UPI IDs (CONTEXT-BASED EXTRACTION - No Allowlist Dependency)
-        # Extract ANY UPI pattern (user@handle) when payment/transaction context is present
-        # This ensures test scenarios with fake handles (fakebank, testbank, etc.) are captured
+        # 2.3 UPI IDs (strict patterns first)
+        handles_regex = "|".join(self.upi_handles)
+        upi_pattern = fr'\b([a-zA-Z0-9.\-_]{{2,}}@(?:{handles_regex}))\b'
+        for match in re.finditer(upi_pattern, text):
+            val = match.group(1)
+            # CONTEXT CHECK: If honeypot ASKED FOR EMAIL (not UPI), and value has email domain, skip UPI
+            # BUT if honeypot asked for UPI, extract regardless
+            if honeypot_asked_for_email and not honeypot_asked_for_upi:
+                if any(domain in val.lower() for domain in [".com", ".net", ".org", ".in", ".edu", ".gov"]):
+                    continue  # Let email pattern handle this
+            extracted.append(RawIntel("upi_ids", val, "strict", 1.0, message_index))
 
-        has_payment_context = any(word in full_text.lower() for word in [
-            "upi", "pay", "send", "transfer", "money", "account", "refund",
-            "payment", "verify", "deposit", "credit", "transaction"
-        ])
-
-        # Extract UPI IDs when ANY of these conditions are met:
-        # 1. Payment/transaction keywords present (scammer likely sharing payment details)
-        # 2. Honeypot explicitly asked for UPI (agent requesting UPI)
-        # 3. Message contains @ symbol with payment-related words nearby
-
-        if has_payment_context or honeypot_asked_for_upi or any(word in message_lower for word in ["upi", "payment id", "pay to", "transfer to"]):
-            # Generic UPI pattern: anything@anything (minimum 2 chars each side)
+        # Generic UPI (fallback) - Must contain '@' and be surrounded by word boundaries
+        # Trigger on payment/money context words OR when honeypot explicitly asks for UPI
+        has_payment_context = any(word in full_text.lower() for word in ["upi", "pay", "send", "transfer", "money", "account", "refund"])
+        # Allow generic UPI if: (payment context AND no email context) OR honeypot asked for UPI
+        if (has_payment_context and not has_email_context) or honeypot_asked_for_upi:
             generic_upi_pattern = r'\b([a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,})\b'
             for match in re.finditer(generic_upi_pattern, text):
-                raw_match = match.group(1)
-                val = raw_match.lower()
-
-                # CRITICAL FIX: Strip trailing punctuation (periods from sentences, commas, etc.)
-                # Scammer sends: "My UPI is scammer.fraud@fakebank." (with period)
-                # Without this, we'd extract: "scammer.fraud@fakebank." which is invalid
-                val = re.sub(r'[.,;:!?]+$', '', val)  # Remove trailing punctuation
-
-                # DEBUG: Log to trace truncation
-                logger.info(f"✅ UPI MATCH: raw='{raw_match}' → cleaned='{val}' (len={len(val)})")
-
+                val = match.group(1)
                 # Skip if already extracted
-                if any(x.value == val and x.type == "upi_ids" for x in extracted):
-                    logger.debug(f"⏭️  Skipping duplicate UPI: {val}")
-                    continue
-
-                # ONLY skip if it's OBVIOUSLY an email (has .com, .net, .org, .in, etc. TLD)
-                # This allows fakebank, testbank, scambank to pass through
-                has_email_tld = any(tld in val for tld in [
-                    ".com", ".net", ".org", ".in", ".edu", ".gov", ".co", ".io"
-                ])
-
-                # If honeypot asked for email (not UPI) and this has email TLD, skip it for email extraction
-                if has_email_context and not honeypot_asked_for_upi and has_email_tld:
-                    continue
-
-                # If it has email TLD but honeypot asked for UPI, still skip (likely email)
-                if has_email_tld and not honeypot_asked_for_upi:
-                    continue
-
-                # Extract as UPI - this will capture fakebank, testbank, paytm, ybl, etc.
-                confidence = 1.0 if (honeypot_asked_for_upi or "upi" in message_lower) else 0.9
-                source = "context_aware" if has_payment_context else "requested"
-                logger.info(f"✅ UPI EXTRACTED: '{val}' (len={len(val)}) from message_index={message_index}")
-                extracted.append(RawIntel("upi_ids", val, source, confidence, message_index))
+                if any(x.value == val and x.type == "upi_ids" for x in extracted): continue
+                # Skip common email domains - BUT if honeypot asked for UPI, be more lenient
+                if honeypot_asked_for_upi:
+                    # Only skip obvious emails when honeypot asked for UPI
+                    if any(domain in val.lower() for domain in ["@gmail.com", "@yahoo.com", "@outlook.com", "@hotmail.com"]):
+                        continue
+                else:
+                    # Stricter filter when honeypot didn't ask
+                    if any(domain in val.lower() for domain in ["@gmail", "@yahoo", "@outlook", "@hotmail", "@live", "@fake", ".com", ".net", ".org", ".in"]):
+                        continue
+                extracted.append(RawIntel("upi_ids", val, "context_fallback", 1.0, message_index))
 
         # 2.4 Phone Numbers (Enhanced Robust Logic)
         # Matches +91 with flexible spacing/hyphens, and 10-digit numbers starting with 6-9
@@ -516,34 +488,24 @@ class IntelligenceExtractor:
 
             extracted.append(RawIntel("phone_numbers", value, "strict", 1.0, message_index))
 
-        # 2.5 Email Addresses (CONTEXT-AWARE EXTRACTION - Important for scoring)
-        # Email extraction is worth points in evaluation, so ensure we capture them
-        # Pattern: standard email format (user@domain.tld)
+        # 2.5 Email Addresses (CONTEXT-AWARE - for hackathon scoring)
+        # Pattern: standard email format (user@domain.com)
         email_pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
         for match in re.finditer(email_pattern, text):
-            email = match.group().lower()
+            email = match.group()
 
-            # Skip if already extracted as UPI
-            if any(x.value == email and x.type == "upi_ids" for x in extracted):
-                # If honeypot asked for EMAIL specifically, prioritize email over UPI
-                if has_email_context:
-                    # Remove from UPI list and add as email
-                    extracted = [x for x in extracted if not (x.value == email and x.type == "upi_ids")]
-                    extracted.append(RawIntel("email_addresses", email, "context_prioritized", 1.0, message_index))
-                continue
-
-            # Extract as email - this is important for hackathon scoring
-            # Extract when: email context OR message has email keywords OR has TLD
-            has_email_keywords = any(word in message_lower for word in [
-                "email", "e-mail", "mail", "gmail", "yahoo", "outlook",
-                "send to", "contact", "reach me", "inbox"
-            ])
-
-            if has_email_context or has_email_keywords or honeypot_asked_for_email:
-                extracted.append(RawIntel("email_addresses", email, "context_aware", 1.0, message_index))
+            # CONTEXT CHECK: If this looks like email AND has email context, prioritize email over UPI
+            # Skip if it's actually a UPI ID (already extracted) UNLESS email context is strong
+            if has_email_context:
+                # Strong email context - extract as email even if UPI was extracted
+                # Remove from UPI list if present
+                extracted = [x for x in extracted if not (x.value == email and x.type == "upi_ids")]
+                extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
             else:
-                # Still extract even without strong context (for scoring)
-                extracted.append(RawIntel("email_addresses", email, "pattern_match", 0.8, message_index))
+                # No email context - only extract if not already extracted as UPI
+                if any(x.value == email and x.type == "upi_ids" for x in extracted):
+                    continue
+                extracted.append(RawIntel("email_addresses", email, "strict", 1.0, message_index))
 
         # 2.6 Phishing Links (Legacy Strict)
         url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'

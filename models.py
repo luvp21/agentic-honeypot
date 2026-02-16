@@ -146,12 +146,12 @@ class FinalCallbackPayload(BaseModel):
     """
     MANDATORY FINAL CALLBACK PAYLOAD
     Sent to: https://hackathon.guvi.in/api/updateHoneyPotFinalResult
+    MATCHES OFFICIAL SPECIFICATION EXACTLY
     """
     sessionId: str = Field(..., description="Session ID from platform")
-    status: str = Field("completed", description="Status: completed/final - REQUIRED for 5 points")
     scamDetected: bool = Field(..., description="Must be True before sending")
+    totalMessagesExchanged: int = Field(..., description="Total message count - at TOP level per spec")
     extractedIntelligence: ExtractedIntelligence = Field(..., description="All extracted intelligence")
-    engagementMetrics: Optional[EngagementMetrics] = Field(None, description="Engagement metrics - worth 2.5 points")
     agentNotes: str = Field(..., description="Summary of scammer behavior and tactics")
 
 

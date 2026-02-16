@@ -591,7 +591,7 @@ class SessionManager:
             f"Intel types={len(session.intel_graph)}"
         )
 
-        return {"send": True, "type": "final"}
+        return {"send": True, "type": "completed"}
 
     def mark_callback_sent(self, session_id: str, phase: str):
         """Update callback phase."""

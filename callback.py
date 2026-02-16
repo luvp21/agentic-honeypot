@@ -47,7 +47,8 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
     if qr_mentions:
         other_intel["qrMentions"] = qr_mentions
 
-    return ExtractedIntelligence(
+    # Create intelligence object
+    intelligence = ExtractedIntelligence(
         phoneNumbers=extracted_data.get("phone_numbers", []),
         bankAccounts=extracted_data.get("bank_accounts", []),
         upiIds=extracted_data.get("upi_ids", []),
@@ -55,8 +56,10 @@ def map_intelligence_to_camelcase(extracted_data: dict) -> ExtractedIntelligence
         emailAddresses=extracted_data.get("email_addresses", []),
         ifscCodes=extracted_data.get("ifsc_codes", []),
         suspiciousKeywords=extracted_data.get("suspicious_keywords", []),
-        other=other_intel
+        other=other_intel if other_intel else {}  # Keep consistent structure
     )
+
+    return intelligence
 
 
 def generate_agent_notes(
@@ -133,10 +136,8 @@ def send_final_callback(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
-    scammer_profile=None,  # NEW: ScammerProfile object
-    conversation_history: List = None,
-    engagement_duration_seconds: int = 0,  # NEW: Required for scoring
-    status: str = "completed"
+    scammer_profile=None,
+    conversation_history: List = None
 ) -> bool:
     """
     Send final results to GUVI evaluation platform.
@@ -150,10 +151,8 @@ def send_final_callback(
         total_messages: Total message count
         extracted_intelligence: Intelligence dict (snake_case)
         scam_type: Type of scam
-        scammer_profile: Behavioral profile (NEW)
+        scammer_profile: Behavioral profile
         conversation_history: Optional conversation data
-        engagement_duration_seconds: Duration in seconds (NEW - for 10 points)
-        status: Callback status (completed/final)
 
     Returns:
         True if callback successful, False otherwise
@@ -177,28 +176,18 @@ def send_final_callback(
             conversation_history=conversation_history
         )
 
-        # Append status to notes for visibility
-        agent_notes = f"[{status.upper()} CALLBACK] {agent_notes}"
-
-        # Create engagement metrics (NEW - for 2.5 points)
-        from models import EngagementMetrics
-        engagement_metrics = EngagementMetrics(
-            totalMessagesExchanged=total_messages,
-            engagementDurationSeconds=engagement_duration_seconds
-        )
-
-        # Create payload
+        # Create payload matching OFFICIAL SPECIFICATION
         payload = FinalCallbackPayload(
             sessionId=session_id,
-            status=status,  # NEW - Required for 5 points
             scamDetected=scam_detected,
+            totalMessagesExchanged=total_messages,
             extractedIntelligence=intelligence,
-            engagementMetrics=engagement_metrics,  # NEW - worth 2.5 points
             agentNotes=agent_notes
         )
 
         # Log payload for debugging
-        logger.info(f"Sending {status} callback for session {session_id}")
+        logger.info(f"Sending final callback for session {session_id}")
+        logger.info(f"📤 FULL PAYLOAD: {payload.model_dump_json(indent=2)}")
         logger.debug(f"Payload: {payload.model_dump_json(indent=2)}")
 
         # Send POST request
@@ -226,6 +215,13 @@ def send_final_callback(
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Callback failed for session {session_id}: {e}")
+        # Log the response body for debugging 422 errors
+        try:
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response body: {e.response.text}")
+                logger.error(f"Response headers: {e.response.headers}")
+        except Exception as log_err:
+            logger.error(f"Could not log response details: {log_err}")
 
         # HACKATHON: Log callback failure
         performance_logger.log_callback(session_id, False, None, 0)
@@ -247,10 +243,8 @@ def send_callback_with_retry(
     total_messages: int,
     extracted_intelligence: dict,
     scam_type: str = "unknown",
-    scammer_profile=None,  # NEW
-    engagement_duration_seconds: int = 0,  # NEW
-    max_retries: int = 3,
-    status: str = "completed"
+    scammer_profile=None,
+    max_retries: int = 3
 ) -> bool:
     """
     Send callback with retry logic and exponential backoff.
@@ -262,10 +256,8 @@ def send_callback_with_retry(
         total_messages: Message count
         extracted_intelligence: Intelligence data
         scam_type: Scam type
-        scammer_profile: Behavioral profile (NEW)
-        engagement_duration_seconds: Duration in seconds (NEW)
+        scammer_profile: Behavioral profile
         max_retries: Maximum retry attempts
-        status: Callback status
 
     Returns:
         True if successful, False after all retries failed
@@ -276,11 +268,8 @@ def send_callback_with_retry(
     import os
 
     for attempt in range(max_retries):
-
-        # Defensive Switch: Only allow 'completed' or 'final' status to hit the external API
-        if status not in ["completed", "final"]:
-             logger.info(f"Skipping external callback for status: {status} (Internal Phase Only)")
-             return True
+        # Log attempt
+        logger.info(f"📤 Attempting callback for {session_id}, attempt={attempt+1}/{max_retries}")
 
         success = send_final_callback(
             session_id=session_id,
@@ -288,9 +277,7 @@ def send_callback_with_retry(
             total_messages=total_messages,
             extracted_intelligence=extracted_intelligence,
             scam_type=scam_type,
-            scammer_profile=scammer_profile,  # NEW
-            engagement_duration_seconds=engagement_duration_seconds,  # NEW
-            status=status
+            scammer_profile=scammer_profile
         )
 
         if success:
@@ -316,7 +303,6 @@ def send_callback_with_retry(
             "scamDetected": scam_detected,
             "totalMessagesExchanged": total_messages,
             "extractedIntelligence": extracted_intelligence,
-            "status": status,
             "timestamp": time.time()
         }
 

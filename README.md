@@ -1,60 +1,24 @@
----
-title: Agentic Honeypot
-emoji: 🍯
-colorFrom: red
-colorTo: pink
-sdk: docker
-pinned: false
-license: mit
-app_port: 8000
----
+# 🍯 Agentic Honeypot - AI-Powered Scam Intelligence Platform
 
-# 🍯 Agentic Honeypot - Enterprise Intelligence Extraction Platform
+An enterprise-grade AI honeypot system that autonomously detects scam attempts, engages scammers through natural multi-turn conversations, and extracts valuable intelligence for fraud prevention.
 
-An enterprise-grade AI-powered honeypot system that autonomously detects scam attempts, engages scammers through multi-turn conversations, and extracts valuable intelligence using advanced behavioral profiling and continuous extraction strategies.
+## 🚀 Quick Start
 
-## 🚀 Features
-
-### Core Capabilities
-- **🎯 Autonomous Scam Detection**: Real-time pattern matching and ML-based classification
-- **🤖 Multi-Turn AI Agent**: Maintains believable personas to maximize engagement
-- **📊 Continuous Intelligence Extraction**: Never stops extracting - runs on EVERY turn with backfill
-- **🧠 Behavioral Profiling**: Analyzes scammer tactics, language, and aggression patterns
-- **🔄 Explicit State Machine**: Proper lifecycle management (INIT → SCAM_DETECTED → ENGAGING → EXTRACTING → FINALIZED)
-- **⏱️ Delayed Callback Strategy**: Optimized for maximum engagement (15+ turns or 60s idle)
-
-### Intelligence Extraction
-The system extracts and validates:
-- 💳 Bank Account Numbers (context-aware, with validation)
-- 💰 UPI IDs (strict handle verification)
-- 🏦 IFSC Codes (format validation + context boost)
-- 📱 Phone Numbers (negative context filtering)
-- 🔗 Phishing Links (URL detection)
-- 🚨 Suspicious Keywords (urgency/fear tactics)
-
-### Behavioral Analysis
-Profiles scammer behavior including:
-- **Tactics**: URGENCY, FEAR, REWARD, AUTHORITY, SCARCITY
-- **Language**: English, Hinglish, Hindi detection
-- **Aggression Score**: 0.0-1.0 based on communication patterns
-
-## 🏗️ Architecture
-
-### State Machine Flow
-```
-INIT → SCAM_DETECTED → ENGAGING → EXTRACTING → FINALIZED
+### Docker Deployment (Recommended)
+```bash
+docker build -t honeypot .
+docker run -p 8000:8000 --env-file .env honeypot
 ```
 
-### Core Components
-- `models.py` - Data structures with state machine enums
-- `behavioral_profiler.py` - Scammer behavior analysis
-- `session_manager.py` - State transitions & lifecycle
-- `intelligence_extractor.py` - Pattern matching & extraction
-- `ai_agent.py` - Response generation
-- `callback.py` - External API communication
-- `main.py` - FastAPI orchestration
+### Local Development
+```bash
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-## 🔧 API Usage
+The API will be available at `http://localhost:8000`
+
+## 📋 API Specification
 
 ### Endpoint
 ```
@@ -64,13 +28,24 @@ POST /api/honeypot/message
 ### Request Format
 ```json
 {
-  "sessionId": "unique-session-id",
+  "sessionId": "uuid-string",
   "message": {
     "sender": "scammer",
-    "text": "URGENT! Your account will be blocked!",
+    "text": "URGENT: Your account has been compromised!",
     "timestamp": 1707654321000
   },
-  "conversationHistory": []
+  "conversationHistory": [
+    {
+      "sender": "scammer",
+      "text": "Previous message...",
+      "timestamp": 1707654320000
+    }
+  ],
+  "metadata": {
+    "channel": "SMS",
+    "language": "English",
+    "locale": "IN"
+  }
 }
 ```
 
@@ -78,67 +53,128 @@ POST /api/honeypot/message
 ```json
 {
   "status": "success",
-  "reply": "What? I don't understand. What happened to my account?"
+  "reply": "Oh dear, what happened? Can you explain more?"
 }
 ```
 
-## 📊 Intelligence Output
+## 🎯 Core Features
 
-When finalized, sends callback to GUVI platform with:
+### Intelligent Scam Detection
+- Real-time pattern matching across multiple fraud types
+- Multi-stage attack detection
+- Context-aware classification
+
+### Continuous Intelligence Extraction
+Extracts and validates:
+- 💳 Bank Account Numbers
+- 💰 UPI IDs
+- 🏦 IFSC Codes
+- 📱 Phone Numbers
+- 🔗 Phishing Links
+- 📧 Email Addresses
+- 🚨 Suspicious Keywords
+
+### Adaptive AI Agent
+- Maintains believable elderly persona
+- Context-aware response generation
+- Multi-turn conversation handling
+- Strategic engagement for maximum intelligence extraction
+
+### Behavioral Profiling
+Analyzes scammer tactics:
+- URGENCY, FEAR, AUTHORITY patterns
+- Aggression scoring
+- Language detection (English, Hindi, Hinglish)
+- Psychological profiling
+
+## 📊 Final Output Structure
+
+After conversation completion, the system sends a callback with:
 
 ```json
 {
-  "sessionId": "session-123",
-  "status": "completed",
+  "sessionId": "session-id",
   "scamDetected": true,
+  "totalMessagesExchanged": 18,
   "extractedIntelligence": {
     "phoneNumbers": ["+91-9876543210"],
     "bankAccounts": ["1234567890123456"],
-    "upiIds": ["scammer.fraud@fakebank"],
+    "upiIds": ["scammer@bank"],
     "phishingLinks": ["http://malicious-site.com"],
     "emailAddresses": ["scammer@fake.com"],
     "ifscCodes": ["HDFC0001234"],
     "suspiciousKeywords": ["urgent", "verify", "blocked"]
   },
-  "engagementMetrics": {
-    "totalMessagesExchanged": 18,
-    "engagementDurationSeconds": 120
-  },
-  "agentNotes": "SUMMARY: BANK_FRAUD scam operation targeting elderly persona. Engagement spans 18 exchanges with 5 unique data points extracted. Extracted: Phone Numbers, Bank Accounts, UPI IDs. TACTICS: URGENCY, FEAR. AGGRESSION: High. PERFORMANCE: Successfully maintained 'Retired Teacher' persona using adaptive engagement strategies. No PII leaked. All extracted data is validated for evaluates."
+  "agentNotes": "SUMMARY: BANK_FRAUD scam operation targeting elderly persona..."
 }
 ```
 
-## 🎯 Optimization for Hackathons
+## 🏗️ System Architecture
 
-The system is optimized for hackathon scoring metrics:
-- **Maximum Engagement Duration**: Delays finalization to 15+ turns
-- **Continuous Extraction**: Never stops extracting intelligence
-- **Backfill Strategy**: Re-scans full conversation every 5 turns
-- **Rich Behavioral Insights**: Comprehensive `agentNotes` generation
-
-## 🔐 Security
-
-- API key authentication
-- Environment variable configuration
-- Rate limiting ready
-- Input validation
-
-## 📝 Configuration
-
-Adjust thresholds in `session_manager.py`:
-```python
-MAX_TURNS_THRESHOLD = 15  # Minimum turns before finalization
-IDLE_TIMEOUT_SECONDS = 60  # Max idle time before finalization
 ```
+┌─────────────────┐
+│   FastAPI App   │
+└────────┬────────┘
+         │
+    ┌────┴────────────────────┐
+    │                         │
+┌───┴─────────┐      ┌────────┴──────┐
+│  Scam       │      │   Session     │
+│  Detector   │      │   Manager     │
+└───┬─────────┘      └────────┬──────┘
+    │                         │
+    └────────┬────────────────┘
+             │
+    ┌────────┴────────┐
+    │                 │
+┌───┴──────────┐  ┌──┴──────────────┐
+│ Intelligence │  │   AI Agent      │
+│  Extractor   │  │  (LLM-Powered)  │
+└──────────────┘  └─────────────────┘
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+Create a `.env` file:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+LLM_ENABLED=true
+```
+
+### Key Components
+- `main.py` - FastAPI application & orchestration
+- `ai_agent.py` - LLM-powered response generation
+- `scam_detector.py` - Pattern-based scam detection
+- `intelligence_extractor.py` - Data extraction & validation
+- `session_manager.py` - State management & lifecycle
+- `behavioral_profiler.py` - Scammer behavior analysis
+- `callback.py` - External API integration
+- `models.py` - Data structures & validation
+
+## 📈 Performance Metrics
+
+- **Engagement Quality**: 15+ turn conversations
+- **Extraction Rate**: Continuous on every turn
+- **Detection Accuracy**: Multi-pattern rule-based + ML
+- **Response Time**: < 5 seconds per turn
+
+## 🔐 Security Features
+
+- Input validation & sanitization
+- Injection attack prevention
+- Token leakage prevention
+- Context-aware safety filters
+- Environment-based configuration
 
 ## 🏆 Built For
 
-**GUVI Hackathon**: Scam Detection & Intelligence Extraction Challenge
+**GUVI Hackathon 2026** - Scam Detection & Intelligence Extraction Challenge
 
 ## 📄 License
 
-MIT License - See LICENSE file for details
+MIT License
 
 ---
 
-**Built with FastAPI, Pydantic, and advanced NLP techniques for enterprise-grade scam intelligence gathering.**
+**Powered by FastAPI, Google Gemini AI, and Advanced NLP**
