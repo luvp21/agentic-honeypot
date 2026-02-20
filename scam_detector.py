@@ -461,6 +461,8 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\brespond now\b",
         r"\breply now\b",
         r"\byou must act\b",
+        r"\bwill be issued\b",              # "arrest warrant will be issued"
+        r"\bif not (?:cleared|settled|paid)\b",  # "if taxes are not cleared"
     ],
 
 
@@ -498,6 +500,8 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bgst clearance\b",
         r"\brelease charge\b",
         r"\bclaim fee\b",
+        r"\bcollect request\b",              # "a collect request has been sent" (UPI fraud)
+        r"\bpending collect\b",
     ],
 
     "THREAT": [
@@ -520,6 +524,19 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bprosecution\b",
         r"\bcriminal charges\b",
         r"\bforcible recovery\b",
+        # Tech-support cyber threats
+        r"\btrojan\b",                        # "Trojan malware detected"
+        r"\bmalware\b",                       # "malware on your system"
+        r"\bvirus detected\b",
+        r"\bsystem.*(?:infected|hacked|compromised)\b",
+        r"\bhacked\b",
+        # Parcel / delivery threats
+        r"\bon hold\b",                       # "parcel is on hold"
+        r"\bshipment.*(?:hold|detained)\b",
+        # Financial fraud (refund scam)
+        r"\bdouble charged\b",                # "your order was double charged"
+        r"\bwrongly (?:charged|debited)\b",
+        r"\bunauthorized debit\b",
     ],
 
     "PRIZE": [
@@ -527,6 +544,12 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bclaim prize\b", r"\baward\b", r"\bcongratulations\b",
         r"\blottery\b", r"\bbumper prize\b",
         r"\bprize money\b", r"\bwinning amount\b", r"\bselected as winner\b",
+        # Insurance / investment scam prize lures
+        r"\bready for release\b",            # "Rs. 2.5 lakhs is ready for release"
+        r"\bmaturity amount\b",              # "policy maturity amount ready"
+        r"\bbonus.*(?:ready|waiting|pending|available)\b",  # "bonus is ready"
+        r"\bamount.*(?:ready|waiting|pending|approved)\b",  # "amount is approved"
+        r"\bfunds.*(?:ready|waiting|pending|released)\b",
     ],
     "IMPERSONATION": [
         r"\brbi\b", r"\bsbi\b", r"\bpolice\b", r"\bgovernment\b",
@@ -596,12 +619,26 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
         r"http://[^\s]+",
         r"https?://[^\s]*(amaz0n|amaz-on|sbi-secure|hdfc-alert|refund-it-dept|india-post-track)[^\s]*",
+        # Text-only link references (scammer says "at this link" without showing URL yet)
+        r"\bthis link\b",                    # "submit at this link" / "verify at this link"
+        r"\bbelow link\b",                   # "click the below link"
+        r"\bgiven link\b",                   # "use the given link"
+        r"\bsecure portal\b",               # "log in on our secure portal"
+        r"\bour portal\b",                  # "verify on our portal"
+        r"\bofficial portal\b",
     ],
     "PRESSURE": [
         r"don.t tell anyone", r"\bkeep.*secret\b", r"\btime running out\b",
         r"\bdon.t share\b", r"\bconfidential\b", r"\bprivate matter\b",
         r"\bonly for you\b", r"\bbetween us\b", r"\bno one should know\b",
         r"\bdo not share this\b",
+        # Pressure to act via immediate call-back
+        r"\bcall.*right away\b",             # "Call our fraud department right away"
+        r"\bcall.*immediately\b",            # "Call our officer immediately"
+        r"\bcall.*right now\b",
+        r"\bcontact.*immediately\b",
+        r"\bmust call\b",
+        r"\bcall back immediately\b",
     ],
     "ADVANCE_FEE": [
         r"\bsend money first\b", r"\bdeposit required\b",
@@ -623,6 +660,15 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bpay.*\bto prevent\b",           # "pay to prevent disconnection"
         r"\bpay.*\bto unblock\b",           # "pay to unblock account"
         r"\bcharge.*\bto.*(?:release|receive|claim)\b",
+        # Confirm/verify details before receiving money (income_tax refund hook)
+        r"\bconfirm.*to receive\b",          # "Confirm account details to receive refund"
+        r"\bverify.*to receive\b",           # "Verify your account to receive funds"
+        r"\bapprove.*to receive\b",          # "Approve collect request to receive cashback"
+        # Processing/releasing money as a lure (refund scam)
+        r"\bprocess.*refund\b",              # "We will process your refund" (refund scam)
+        r"\bprocess.*your.*payment\b",
+        r"\brelease.*amount\b",              # "release the amount to your account"
+        r"\bcredit.*your.*account\b",        # "credit the refund to your account"
     ],
 
 }
