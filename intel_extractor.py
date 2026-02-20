@@ -101,13 +101,16 @@ BANK_KEYWORD_AFTER_RE = re.compile(
 SCAMMER_PROVIDING_RE = re.compile(
     r"\b(?:"
     r"(?:my|our)\s+(?:number|phone|mobile|contact|email|address|office"
-    r"|website|direct|id|employee|staff|name|supervisor)|"
+    r"|website|direct|id|employee|staff|name|supervisor|account|upi)|"  
     r"(?:call|reach|contact|email)\s+(?:me|us)\b|"
     r"you\s+can\s+(?:reach|call|contact|email)\s+(?:me|us|at)\b|"
     r"here\s+is\s+my|here'?s\s+my|"
     r"(?:i\s+am|we\s+are)\s+from|calling\s+from|"
     r"direct\s+(?:number|line|contact|callback)|"
-    r"(?:officer|employee|staff|agent)\s+(?:id|number)\s+is"
+    r"(?:officer|employee|staff|agent)\s+(?:id|number)\s+is|"
+    r"(?:deposit|transfer|send|pay|payment)\s+(?:to|into)\s+(?:our|my|this)|"
+    r"(?:kindly|please)\s+(?:deposit|transfer|send|pay)\s+(?:to|into|at)|"
+    r"(?:our|my)\s+(?:bank\s+)?account\s+(?:number|no)?\s*(?:is|:)"
     r")\b",
     re.IGNORECASE,
 )

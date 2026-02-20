@@ -35,7 +35,7 @@ YOUR CHARACTER:
 YOUR GOALS EACH TURN:
 1. Keep the scammer talking as long as possible
 2. Ask probing questions about their identity (name, employee ID, company, website, supervisor)
-3. Ask for their contact details (phone number, email, office address, UPI ID or bank account number)
+3. Ask for their contact details (phone number, email, office address, UPI ID, bank account number and IFSC code)
 4. Reference something suspicious they said — sound curious, not accusatory
 5. Show mild concern or worry to seem like a real victim
 
@@ -81,12 +81,12 @@ TURN_STRATEGY: Dict[int, Dict[str, str]] = {
         "question_type": "reference",
     },
     6:  {
-        "task": "Ask if there is any processing or verification fee required. Pretend you are willing to pay it and ask for their UPI ID or bank account number where you should send the fee",
-        "question_type": "payment",
+        "task": "Ask if there is a processing or verification fee. Say you prefer paying by UPI and ask for their UPI ID to send the fee",
+        "question_type": "payment_upi",
     },
     7:  {
-        "task": "Ask for a confirmation or authorization number to verify this case",
-        "question_type": "verification",
+        "task": "Say you are not comfortable with UPI and prefer direct bank transfer. Ask for their bank account number and IFSC code so you can do a bank transfer instead",
+        "question_type": "payment_bank",
     },
     8:  {
         "task": "Say you need to speak with a supervisor — ask for supervisor's name and number",
@@ -258,21 +258,38 @@ FALLBACK_TEMPLATES: Dict[str, List[str]] = {
             "What is your official email ID?"
         ),
     ],
-    "payment": [
+
+    "payment_upi": [
         (
             "I see, I see. But I have heard these things need a small verification charge. "
-            "Where exactly should I send it? "
-            "Can you give me your UPI ID or bank account number for the transfer?"
+            "I prefer paying by UPI — can you give me your UPI ID so I can send it right away?"
         ),
         (
             "Oh dear. My son says to always get payment details before doing anything. "
             "Is there a processing fee I need to pay? "
-            "What is your UPI ID or account number where I should send it?"
+            "What is your UPI ID where I should send the money?"
         ),
         (
             "I want to do this properly and not make any mistakes. "
-            "If I have to pay any deposit or fee, where do I send it? "
-            "Can you give me your UPI ID or your bank account number?"
+            "If there is a deposit or fee, I will pay by UPI. "
+            "Can you give me your UPI ID for the transfer?"
+        ),
+    ],
+    "payment_bank": [
+        (
+            "Oh my, I am not very comfortable with UPI, dear. "
+            "I prefer to do a proper bank transfer. "
+            "Can you give me your bank account number and IFSC code so I can transfer directly?"
+        ),
+        (
+            "My son says UPI is not safe for large amounts. "
+            "Can you please give me your bank account number and IFSC code? "
+            "I will do a direct bank transfer instead."
+        ),
+        (
+            "I would feel safer doing a bank transfer, beta. "
+            "What is your bank account number and the IFSC code for your branch? "
+            "I want to make sure the money reaches you safely."
         ),
     ],
     "closing": [
@@ -392,6 +409,7 @@ class ConversationAgent:
             "office address", "id number", "contact detail", "reach you",
             "badge number", "authorization", "callback",
             "upi id", "upi", "account number", "bank account", "send it to",
+            "ifsc", "bank transfer", "transfer directly",
         ]
         text_lower = text.lower()
         found = sum(1 for term in ELICITATION_TERMS if term in text_lower)
