@@ -28,10 +28,11 @@ class MessageContent(BaseModel):
     """
     The message object sent by the GUVI evaluation platform.
     Official format: {"sender": "scammer", "text": "...", "timestamp": "..."}
+    GUVI sends timestamp as epoch ms integer or ISO string — accept both.
     """
     sender:    str = "scammer"
     text:      str
-    timestamp: Optional[str] = None
+    timestamp: Optional[Any] = None  # epoch ms (int) or ISO string
 
 
 class ConversationEntry(BaseModel):
