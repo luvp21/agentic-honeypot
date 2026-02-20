@@ -130,15 +130,16 @@ class PerformanceLogger:
         }
         self.perf_logger.info(f"FINALIZATION: {json.dumps(log_entry)}")
 
-    def log_callback(self, session_id: str, success: bool, status_code: Optional[int], response_time: float):
-        """Log callback attempt"""
+    def log_callback(self, session_id: str, success: bool, status_code: Optional[int], response_time: float, response_body: Optional[Dict] = None):
+        """Log callback attempt including server response JSON"""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "session_id": session_id,
             "event": "CALLBACK",
             "success": success,
             "status_code": status_code,
-            "response_time_ms": round(response_time * 1000, 2)
+            "response_time_ms": round(response_time * 1000, 2),
+            "response_body": response_body
         }
         self.perf_logger.info(f"CALLBACK: {json.dumps(log_entry)}")
 

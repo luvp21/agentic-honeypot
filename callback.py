@@ -6,6 +6,7 @@ CRITICAL: This is MANDATORY for hackathon scoring
 
 import requests
 import logging
+import json
 import time
 from typing import Dict, List
 from models import FinalCallbackPayload, ExtractedIntelligence
@@ -175,13 +176,20 @@ def send_final_callback(
         # Check response
         response.raise_for_status()
 
+        # Log server response JSON
+        try:
+            response_json = response.json()
+        except Exception:
+            response_json = {"raw": response.text}
+
         logger.info(
             f"✅ Callback successful for session {session_id} "
             f"(Status: {response.status_code})"
         )
+        logger.info(f"📥 CALLBACK RESPONSE: {json.dumps(response_json, indent=2)}")
 
-        # HACKATHON: Log callback success
-        performance_logger.log_callback(session_id, True, response.status_code, callback_time)
+        # HACKATHON: Log callback success (including response body)
+        performance_logger.log_callback(session_id, True, response.status_code, callback_time, response_json)
 
         return True
 
