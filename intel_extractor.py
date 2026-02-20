@@ -61,38 +61,80 @@ class IntelResult:
 # ---------------------------------------------------------------------------
 
 # ── Phone numbers ──────────────────────────────────────────────────────────
-# Matches: +91-9876543210, 0091 98765 43210, (098) 765-4321, etc.
+# Matches: +91-9876543210, 0091 98765 43210, 9876-543-210, 9876 543 210,
+#          WhatsApp: 9876543210, Helpline: 1800-xxx-xxxx, etc.
 PHONE_RE = re.compile(
     r"""
     (?<!\d)                       # not a substring of a longer number
-    (?:(?:\+|00)91[\s\-]?)?      # optional country code
-    (?:0)?                        # optional leading zero
-    [6-9]\d{9}(?!\d)              # Indian 10-digit mobile
+    (?:
+      (?:\+|00)91[\s\-.]?         # +91 or 0091 country code
+      [6-9]\d{9}(?!\d)           # 10-digit Indian mobile
     |
-    \+[1-9][0-9\s\-().]{7,13}[0-9]  # generic international (must have + prefix)
+      0?[6-9]\d{9}(?!\d)         # 10-digit Indian mobile, optional leading 0
+    |
+      [6-9]\d{4}[\s\-.]\d{5}(?!\d)   # 98765 43210 (space/dash in middle)
+    |
+      [6-9]\d{3}[\s\-.]\d{3}[\s\-.]\d{3}(?!\d)  # 987-654-321 style
+    |
+      (?:\+|00)[1-9][0-9\s\-.()]{7,14}[0-9]  # generic international +XX
+    |
+      1800[\s\-.]?\d{3}[\s\-.]?\d{4}(?!\d)   # toll-free 1800-xxx-xxxx
+    |
+      022[\s\-.]?\d{8}(?!\d)     # Mumbai landline
+    |
+      011[\s\-.]?\d{8}(?!\d)     # Delhi landline
+    )
     """,
     re.VERBOSE,
+)
+# Phone-context RE — catches numbers after keywords like "call me at", "whatsapp", "helpline"
+PHONE_CONTEXT_RE = re.compile(
+    r"(?:call\s+(?:me|us|back|on)?|reach\s+(?:me|us|at)?|contact\s+(?:me|us|at)?|"
+    r"phone\s*(?:no|number|:)?|mobile\s*(?:no|number|:)?|mob(?:\.|:)?|"
+    r"whatsapp\s*(?:no|number|at|on|:)?|helpline\s*(?:no|number|:)?|"
+    r"toll.?free\s*(?:no|number|:)?|direct\s*(?:no|number|line|:)?|"
+    r"callback\s*(?:no|number|:)?|dial\s*(?:no|number)?|ring\s+(?:me|us)?|"
+    r"tele(?:phone)?\s*(?:no|number|:)?|cell\s*(?:no|number|:)?)"
+    r"[\s:.-]*"
+    r"((?:\+|00)?[6-9][0-9\s\-.]{9,14}[0-9])",
+    re.IGNORECASE,
 )
 
 # ── Bank account numbers ───────────────────────────────────────────────────
 # Context-sensitive: match only when near account-related keywords
 BANK_CONTEXT_RE = re.compile(
     r"""
-    (?:account|acc|a\/c|a-c|acno|bank\s*(?:acc|account)|account\s*(?:no|number))
-    [\s:.\-#]*
+    (?:
+      account|acc\b|a\/c|a-c\b|acno|ac\.no|a\.c|ac\s*no|ac\s*number|
+      bank\s*(?:acc(?:ount)?|a\/c|no|number)|account\s*(?:no|number|num|\#)|
+      savings\s*(?:account|acc|a\/c)|current\s*(?:account|acc|a\/c)|
+      beneficiary\s*(?:account|acc|a\/c|number|no)|bene\s*(?:acc|account)|
+      credit\s*(?:to|into|account)|debit\s*from|
+      transfer\s*(?:to|into)\s*(?:account|acc|a\/c|this)?|
+      deposit\s*(?:to|into|in)\s*(?:account|acc|a\/c|this)?|
+      remit\s*(?:to|into)\s*(?:account|acc)?|
+      send\s*(?:money|funds|payment|amount)\s*(?:to|into)?(?:\s*account)?|
+      pay\s*(?:to|into)\s*(?:account|acc|this)?|
+      account\s*details|bank\s*details|ifsc|neft|rtgs|imps
+    )
+    [\s:.\-]*
     ([0-9]{9,18})
     """,
     re.IGNORECASE | re.VERBOSE,
 )
 BANK_STANDALONE_RE = re.compile(r"\b[0-9]{11,18}\b")  # standalone long numbers
 
-# Bank account keyword patterns promoted to module level (used per-sentence below)
+# Keyword BEFORE the number (wider window)
 BANK_KEYWORD_BEFORE_RE = re.compile(
-    r"(?:account|bank|acc|a\/c|ifsc)[^.]{0,60}?([0-9]{11,18})",
+    r"(?:account|bank\s*acc(?:ount)?|savings|current|beneficiary|bene\s*acc|"
+    r"acc\b|a\/c|acno|ifsc|neft|rtgs|imps|deposit\s*to|transfer\s*to|"
+    r"send\s*to|pay\s*to|credit\s*to|remit\s*to)[^.]{0,80}?([0-9]{11,18})",
     re.IGNORECASE,
 )
+# Keyword AFTER the number
 BANK_KEYWORD_AFTER_RE = re.compile(
-    r"([0-9]{11,18})[^.]{0,60}?(?:account|bank|acc|a\/c|ifsc)",
+    r"([0-9]{11,18})[^.]{0,80}?(?:account|bank|acc\b|a\/c|ifsc|neft|rtgs|imps|"
+    r"savings|current|beneficiary|branch)",
     re.IGNORECASE,
 )
 
@@ -101,20 +143,23 @@ BANK_KEYWORD_AFTER_RE = re.compile(
 SCAMMER_PROVIDING_RE = re.compile(
     r"\b(?:"
     r"(?:my|our)\s+(?:number|phone|mobile|contact|email|address|office"
-    r"|website|direct|id|employee|staff|name|supervisor|account|upi)|"  
-    r"(?:call|reach|contact|email)\s+(?:me|us)\b|"
-    r"you\s+can\s+(?:reach|call|contact|email)\s+(?:me|us|at)\b|"
-    r"here\s+is\s+my|here'?s\s+my|"
-    r"(?:i\s+am|we\s+are)\s+from|calling\s+from|"
+    r"|website|direct|id|employee|staff|name|supervisor|account|upi|vpa|bank)|"
+    r"(?:call|reach|contact|email|whatsapp|message)\s+(?:me|us)\b|"
+    r"you\s+can\s+(?:reach|call|contact|email|whatsapp)\s+(?:me|us|at)\b|"
+    r"here\s+is\s+my|here'?s\s+my|i\s+am\s+providing|below\s+(?:are|is)\s+(?:my|our)|"
+    r"(?:i\s+am|we\s+are)\s+from|calling\s+from|writing\s+from|"
     r"direct\s+(?:number|line|contact|callback)|"
     r"(?:officer|employee|staff|agent)\s+(?:id|number)\s+is|"
-    r"(?:deposit|transfer|send|pay|payment)\s+(?:to|into)\s+(?:our|my|this)|"
-    r"(?:kindly|please)\s+(?:deposit|transfer|send|pay)\s+(?:to|into|at)|"
-    r"(?:our|my)\s+(?:bank\s+)?account\s+(?:number|no)?\s*(?:is|:)"
+    r"(?:deposit|transfer|send|pay|payment|remit)\s+(?:to|into|at)\s+(?:our|my|this|the)?|"
+    r"(?:kindly|please)\s+(?:deposit|transfer|send|pay|remit)\s+(?:to|into|at|via)?|"
+    r"(?:our|my)\s+(?:bank\s+)?(?:account|acc|a\/c)\s*(?:number|no|#)?\s*(?:is|:|-)?|"
+    r"(?:our|my)\s+upi\s*(?:id|vpa|handle)?\s*(?:is|:)?|"
+    r"(?:pay|send|transfer)\s+(?:rs\.?|inr|₹)[\s0-9,.]+(?:to|via|using|at)|"
+    r"(?:neft|rtgs|imps|upi)\s+(?:to|transfer|payment)|"
+    r"scan\s+(?:and\s+)?pay|beneficiary\s+(?:name|account|acc|details)"
     r")\b",
     re.IGNORECASE,
 )
-
 # REQUESTING: the scammer is asking the victim to provide their information
 SCAMMER_REQUESTING_RE = re.compile(
     r"\b(?:"
@@ -130,20 +175,33 @@ SCAMMER_REQUESTING_RE = re.compile(
 
 # ── UPI IDs ────────────────────────────────────────────────────────────────
 # Format: localpart@handle  (e.g., user@okaxis, 9876543210@ybl)
+# Full list of active PSP handles as of 2024
+UPI_PSP_HANDLES = (
+    r"okaxis|okhdfcbank|okicici|oksbi|ybl|upi|paytm|ibl|axisbank|hdfcbank|"
+    r"icici|oksbi|kotak|indus|rbl|yes|barodampay|barodampay|freecharge|"
+    r"apl|obc|pnb|cub|dbs|federal|idfcbank|indusind|juspay|kbl|lvb|"
+    r"mahb|nsdl|scb|sib|syndicate|uboi|ucob|unionbank|utbi|vijayabank|"
+    r"waaxis|wahdfcbank|waicici|wasbi|airtel|jio|airtelpaymentsbank|"
+    r"yapl|postpaid|timecosmos|ikwik|abfspay|aubank|bandhan|boi|"
+    r"cmsidfc|cnrb|cosb|dcb|equitas|esaf|fino|gpay|googlepay|phonepe|"
+    r"bhim|bhimsbi|bhimhdfc|bhimaxis|bhimicici|bhimkotak|tapicici|"
+    r"[a-zA-Z][a-zA-Z0-9]{2,}"   # catch-all for any PSP handle
+)
 UPI_RE = re.compile(
-    r"\b[a-zA-Z0-9.\-_+]{3,}@(?:okaxis|okhdfcbank|okicici|oksbi|ybl|upi|paytm|"
-    r"ibl|axisbank|hdfcbank|icici|sbi|kotak|indus|rbl|yes|barodampay|"
-    r"[a-zA-Z][a-zA-Z0-9]{2,})\b",
+    rf"\b[a-zA-Z0-9.\-_+]{{3,}}@(?:{UPI_PSP_HANDLES})\b",
     re.IGNORECASE,
 )
-# Also generic @handle pattern (broader catch)
+# Generic @handle — permissive (any localpart@word)
 UPI_GENERIC_RE = re.compile(r"\b[a-zA-Z0-9.\-_+]{3,}@[a-zA-Z][a-zA-Z0-9]{2,}\b")
 
-# Payment-context UPI — captures any @handle after "UPI ID:", "pay to:", etc.
-# Handles hackathon fake handles like scammer.fraud@fakebank or @fakebank.com
+# Payment-context UPI — captures any @handle after payment keywords
+# Handles fake: scammer.fraud@fakebank, 9876543210@upi, pay@fraudco, etc.
 UPI_PAYMENT_RE = re.compile(
-    r"(?:upi\s*(?:id|vpa|no)?|pay\s+to|send\s+to|transfer\s+to)"
-    r"[\s:.\-#]*([a-zA-Z0-9.\-_+]{3,}@[a-zA-Z0-9.\-]{3,})",
+    r"(?:upi\s*(?:id|vpa|no|address|handle|i\.d\.)?|pay\s+(?:to|at|on)|send\s+(?:to|at|on)|"
+    r"transfer\s+(?:to|at|on)|google\s*pay\s*(?:id|to)?|gpay\s*(?:id|to)?|"
+    r"phonepe\s*(?:id|to)?|paytm\s*(?:id|to)?|bhim\s*(?:id|upi)?|"
+    r"scan\s+(?:and\s+)?pay|payment\s*(?:id|upi|handle)?|vpa\s*(?:id|:)?)"
+    r"[\s:.-]*([a-zA-Z0-9.\-_+]{3,}@[a-zA-Z0-9.\-]{3,})",
     re.IGNORECASE,
 )
 
@@ -390,8 +448,18 @@ class IntelExtractor:
         for sentence, ctx in sentences:
             if ctx == 'REQUESTING':
                 continue  # e.g. "please share your registered phone number"
+            # Primary RE: pure number patterns
             for m in PHONE_RE.finditer(sentence):
                 normed = _normalise_phone(m.group())
+                if normed:
+                    last10 = re.sub(r'[^\d]', '', normed)[-10:]
+                    if last10 and last10 not in seen_last10:
+                        seen_last10.add(last10)
+                        phones.append(normed)
+            # Context RE: numbers after "call me at", "whatsapp", "helpline", etc.
+            for m in PHONE_CONTEXT_RE.finditer(sentence):
+                raw = m.group(1).strip()
+                normed = _normalise_phone(raw)
                 if normed:
                     last10 = re.sub(r'[^\d]', '', normed)[-10:]
                     if last10 and last10 not in seen_last10:
