@@ -711,6 +711,24 @@ class IntelExtractor:
                 if clean:
                     session.add_intel(field_name, clean)
 
+    def finalize_session_intel(self, session) -> None:
+        """
+        Post-process accumulated session intel_store after all turns are complete.
+        Re-runs _clean_case_ids on the full caseIds set so that cross-turn
+        substring duplicates are removed (e.g. '98765' when 'REF-98765-2023'
+        is also present — both captured on different turns, each passing the
+        per-turn substring check individually).
+        Called once at the final turn, before building the output payload.
+        """
+        raw_case_ids = list(session.intel_store.get("caseIds", set()))
+        if len(raw_case_ids) > 1:
+            cleaned = _clean_case_ids(
+                raw_case_ids,
+                list(session.intel_store.get("phishingLinks", set())),
+                list(session.intel_store.get("bankAccounts", set())),
+            )
+            session.intel_store["caseIds"] = set(cleaned)
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton

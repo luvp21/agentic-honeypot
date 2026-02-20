@@ -391,6 +391,10 @@ async def process_message(
             )
             intel_extractor.merge_into_session(session, final_intel)
 
+            # Post-process: re-run substring deduplication on full accumulated caseIds
+            # (cross-turn duplicates can survive per-turn _clean_case_ids checks)
+            intel_extractor.finalize_session_intel(session)
+
             # Build finalOutput payload
             # Note: totalMessagesExchanged = turn_count * 2
             # (1 turn = 1 scammer message + 1 honeypot reply → 10 turns = 20 messages)
