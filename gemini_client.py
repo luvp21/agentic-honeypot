@@ -68,10 +68,13 @@ class GeminiClient:
         prompt: str,
         system_prompt: Optional[str] = None,
         max_tokens: int = 512,
+        json_mode: bool = False,
     ) -> Optional[str]:
         """
         Generate text from Gemini with an 8-second timeout.
         Returns None on timeout or error so callers can use fallback.
+        Set json_mode=True for classify_scam / extract_intel_llm to force
+        valid JSON output and prevent truncated/markdown-wrapped responses.
         """
         if not self._configured:
             return None
@@ -82,14 +85,17 @@ class GeminiClient:
             loop = asyncio.get_event_loop()
 
             def _call() -> str:
+                cfg = genai_types.GenerateContentConfig(
+                    temperature=0.7,
+                    top_p=0.9,
+                    max_output_tokens=max_tokens,
+                )
+                if json_mode:
+                    cfg.response_mime_type = "application/json"
                 response = self._client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=full_prompt,
-                    config=genai_types.GenerateContentConfig(
-                        temperature=0.7,
-                        top_p=0.9,
-                        max_output_tokens=max_tokens,
-                    ),
+                    config=cfg,
                 )
                 return response.text or ""
 
@@ -140,7 +146,7 @@ tech_support, loan_scam, income_tax, refund_scam, insurance>",
   "red_flags": ["<flag1>", "<flag2>"]
 }}"""
 
-        raw = await self.generate(prompt)
+        raw = await self.generate(prompt, json_mode=True)
         if raw:
             return self._parse_json(raw)
         return None
@@ -227,7 +233,7 @@ Respond ONLY in valid JSON (use empty arrays if nothing found):
   "orderNumbers": []
 }}"""
 
-        raw = await self.generate(prompt, max_tokens=1024)
+        raw = await self.generate(prompt, max_tokens=1024, json_mode=True)
         if raw:
             return self._parse_json(raw)
         return None

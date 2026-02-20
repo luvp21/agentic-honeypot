@@ -255,16 +255,25 @@ _COMPILED_CASE_PATTERNS = [
 # Legacy fallback pattern (catches anything missed by the specifics above)
 # Separator handles: "reference number is REF20231234", "case: REF20231234", "ref - ID"
 CASE_CONTEXT_RE = re.compile(
-    r"\b(?:case|reference|ref|ticket|complaint|incident|report)\b"
-    r"(?:\s+(?:number|id|no|#))?"   # optional label word
-    r"(?:\s*(?:is|was|are|has))?"   # optional copula
-    r"\s*[:.\-#=]?\s*"              # optional punctuation separator
+    r"\b(?:case|reference|ref|ticket|complaint|incident|report|"
+    r"authorization|auth|confirmation|conf|token|tracking|track|"
+    r"verification|verify|code|transaction\s+ref)\b"
+    r"(?:\s+(?:number|id|no|#|code))?"   # optional label word
+    r"(?:\s*(?:is|was|are|has))?"         # optional copula
+    r"\s*[:.\-#=]?\s*"                    # optional punctuation separator
     r"([A-Z]{2,8}[0-9]{4,15}|[A-Z]{0,5}[0-9]{6,12}|[A-Z]{2,5}[-/][0-9]{4,12})",
     re.IGNORECASE,
 )
 CASE_STANDALONE_RE = re.compile(
     r"\b(?!(?:TXN|ORD|OD|INV|TXR|REC|PMT|PAY)[-/])[A-Z]{2,5}[-/][0-9]{4,12}\b"
 )
+# Direct-prefix IDs (no separator): AUTH987654, CONF123456, TOKEN456789, TRACK98765
+# Distinct from ORDER_PREFIX_RE (TXN/ORD/INV) — these are auth/confirmation codes
+CASE_AUTH_PREFIX_RE = re.compile(
+    r"\b((?:AUTH|CONF|TOKEN|TRACK|VERIFY|TKT|INC|CMP)[0-9]{4,15})\b",
+    re.IGNORECASE,
+)
+
 # Multi-segment IDs like REF-2023-98765, AUTH-2023-45678, CONF-2024-12345
 # Excludes transaction/order prefixes: TXN, ORD, INV, TXR, REC, PMT, PAY
 CASE_COMPOUND_RE = re.compile(
@@ -602,6 +611,9 @@ class IntelExtractor:
         # Multi-segment compound IDs: REF-2023-98765, AUTH-2023-45678, etc.
         for m in CASE_COMPOUND_RE.finditer(text):
             case_ids.append(m.group().upper())
+        # Direct-prefix IDs without separator: AUTH987654, CONF123456, TOKEN456789
+        for m in CASE_AUTH_PREFIX_RE.finditer(text):
+            case_ids.append(m.group(1).upper())
         # Fallback: legacy context + standalone patterns
         for m in CASE_CONTEXT_RE.finditer(text):
             case_ids.append(m.group(1))

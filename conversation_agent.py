@@ -358,17 +358,40 @@ class ConversationAgent:
                 task=strategy["task"],
                 suggested_question_type=strategy["question_type"],
             )
+            qtype = strategy["question_type"]
             if llm_reply and self._is_usable(llm_reply):
-                reply = llm_reply
-                logger.debug(f"LLM response used for turn {turn}")
+                if self._validates_for_type(llm_reply, qtype):
+                    reply = llm_reply
+                    logger.debug(f"LLM response used for turn {turn}")
+                else:
+                    reply = self._get_fallback(qtype)
+                    logger.info(f"Payment-type fallback used for turn {turn} ({qtype}: missing required terms)")
             else:
-                reply = self._get_fallback(strategy["question_type"])
+                reply = self._get_fallback(qtype)
                 logger.info(f"Rule-based fallback used for turn {turn}")
         else:
             reply = self._get_fallback(strategy["question_type"])
             logger.info(f"Rule-based fallback used for turn {turn} (Gemini unavailable)")
 
         return reply
+
+    # ── Payment-specific validation ──────────────────────────────────────────
+    # If Gemini ignores the payment task and asks something generic,
+    # force fallback to the template that correctly asks for UPI/bank details.
+    _PAYMENT_REQUIRED_TERMS: Dict[str, List[str]] = {
+        "payment_upi": ["upi", "gpay", "google pay", "phonepe", "paytm", "bhim"],
+        "payment_bank": ["account number", "bank account", "ifsc", "bank transfer", "account no", "acc no"],
+    }
+
+    @staticmethod
+    def _validates_for_type(text: str, question_type: str) -> bool:
+        """Return True if the LLM reply contains the required terms for this turn type.
+        Only applies to payment turns where Gemini tends to dodge the ask."""
+        required = ConversationAgent._PAYMENT_REQUIRED_TERMS.get(question_type)
+        if not required:
+            return True  # No special requirement for non-payment turns
+        lower = text.lower()
+        return any(term in lower for term in required)
 
     # ── Quality analysis helpers ─────────────────────────────────────────────
 
@@ -447,6 +470,13 @@ class ConversationAgent:
                 # Last punctuation is too far back — truly truncated
                 logger.debug("LLM reply rejected: no sentence-closing punctuation (ends with %r)", stripped[-5:])
                 return False
+        # Must end with a question mark — PRIYA_SYSTEM_PROMPT strictly requires this.
+        # Catches truncated/hallucinated endings like "...beta. Blocked"
+        if not stripped.endswith('?'):
+            logger.debug(
+                "LLM reply rejected: does not end with '?' (ends with %r)", stripped[-10:]
+            )
+            return False
         return True
 
     @staticmethod
