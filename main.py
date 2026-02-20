@@ -564,6 +564,9 @@ async def process_message(
             callback_type = callback_status["type"]
             logger.info(f"🎯 Callback condition met for {session_id}: {callback_type}")
 
+            # Calculate engagement duration
+            engagement_duration = session_manager.calculate_engagement_duration(session_id)
+
             # Send callback with scammer profile
             # ELITE FIX: total_messages reflects (history + current_message).
             # We add 1 to account for the agent_response we just generated.
@@ -572,6 +575,7 @@ async def process_message(
                 scam_detected=session.is_scam,
                 total_messages=total_messages + 1,
                 extracted_intelligence=session.extracted_intelligence,
+                engagement_duration_seconds=engagement_duration,
                 scam_type=session.scam_type,
                 scammer_profile=session.scammer_profile,
                 max_retries=3
@@ -797,6 +801,7 @@ async def check_idle_sessions(api_key: str = Depends(verify_api_key)):
                     scam_detected=session.is_scam,
                     total_messages=session.message_count,
                     extracted_intelligence=session.extracted_intelligence,
+                    engagement_duration_seconds=engagement_duration,
                     scam_type=session.scam_type,
                     scammer_profile=session.scammer_profile,
                     max_retries=3
