@@ -10,7 +10,7 @@ Scoring impact: 30 pts total (30 ÷ total planted fields = pts per extracted ite
 
 import re
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,45 @@ BANK_CONTEXT_RE = re.compile(
 )
 BANK_STANDALONE_RE = re.compile(r"\b[0-9]{11,18}\b")  # standalone long numbers
 
+# Bank account keyword patterns promoted to module level (used per-sentence below)
+BANK_KEYWORD_BEFORE_RE = re.compile(
+    r"(?:account|bank|acc|a\/c|ifsc)[^.]{0,60}?([0-9]{11,18})",
+    re.IGNORECASE,
+)
+BANK_KEYWORD_AFTER_RE = re.compile(
+    r"([0-9]{11,18})[^.]{0,60}?(?:account|bank|acc|a\/c|ifsc)",
+    re.IGNORECASE,
+)
+
+# ── Sentence-level context classifiers ────────────────────────────────────────
+# PROVIDING: the scammer is actively giving/revealing their own information
+SCAMMER_PROVIDING_RE = re.compile(
+    r"\b(?:"
+    r"(?:my|our)\s+(?:number|phone|mobile|contact|email|address|office"
+    r"|website|direct|id|employee|staff|name|supervisor)|"  
+    r"(?:call|reach|contact|email)\s+(?:me|us)\b|"
+    r"you\s+can\s+(?:reach|call|contact|email)\s+(?:me|us|at)\b|"
+    r"here\s+is\s+my|here'?s\s+my|"
+    r"(?:i\s+am|we\s+are)\s+from|calling\s+from|"
+    r"direct\s+(?:number|line|contact|callback)|"
+    r"(?:officer|employee|staff|agent)\s+(?:id|number)\s+is"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# REQUESTING: the scammer is asking the victim to provide their information
+SCAMMER_REQUESTING_RE = re.compile(
+    r"\b(?:"
+    r"(?:your|the)\s+(?:account|otp|one.?time|pin\b|password|card\s*number"
+    r"|16.?digit|12.?digit|cvv|aadhar|aadhaar|bank\s*details)|"
+    r"(?:share|send|provide|give|confirm|verify|enter|submit)\s+(?:your|the)\b|"
+    r"please\s+(?:share|send|provide|give|confirm|enter|submit)\b|"
+    r"reply\s+with\s+your\b|"
+    r"tell\s+(?:me|us)\s+your\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # ── UPI IDs ────────────────────────────────────────────────────────────────
 # Format: localpart@handle  (e.g., user@okaxis, 9876543210@ybl)
 UPI_RE = re.compile(
@@ -153,9 +192,13 @@ _COMPILED_CASE_PATTERNS = [
     re.compile(p, re.IGNORECASE) for p in _CASE_ID_PATTERNS
 ]
 # Legacy fallback pattern (catches anything missed by the specifics above)
+# Separator handles: "reference number is REF20231234", "case: REF20231234", "ref - ID"
 CASE_CONTEXT_RE = re.compile(
-    r"(?:case|reference|ref|ticket|complaint|id|incident|report)[\s:.\-#]*"
-    r"([A-Z]{0,5}[0-9]{4,12}|[A-Z]{2,5}[-/][0-9]{4,12})",
+    r"\b(?:case|reference|ref|ticket|complaint|incident|report)\b"
+    r"(?:\s+(?:number|id|no|#))?"   # optional label word
+    r"(?:\s*(?:is|was|are|has))?"   # optional copula
+    r"\s*[:.\-#=]?\s*"              # optional punctuation separator
+    r"([A-Z]{2,8}[0-9]{4,15}|[A-Z]{0,5}[0-9]{6,12}|[A-Z]{2,5}[-/][0-9]{4,12})",
     re.IGNORECASE,
 )
 CASE_STANDALONE_RE = re.compile(r"\b[A-Z]{2,5}[-/][0-9]{4,12}\b")
@@ -281,9 +324,35 @@ def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
     return final
 
 
-# ---------------------------------------------------------------------------
-# IntelExtractor class
-# ---------------------------------------------------------------------------
+def _classify_sentences(text: str) -> List[Tuple[str, str]]:
+    """
+    Split text into clauses and classify each as PROVIDING, REQUESTING, or NEUTRAL.
+
+    PROVIDING  = scammer is actively giving their own information (phone, account, email)
+    REQUESTING = scammer is asking the victim to provide their information
+    NEUTRAL    = neither clearly identified
+
+    Used to apply context-awareness to phone + bank account extraction:
+    - skip REQUESTING sentences for phones (avoids extracting victim's number)
+    - skip REQUESTING sentences for standalone bank accounts
+    - only extract standalone bank accounts from PROVIDING sentences
+    """
+    parts = re.split(r'(?<=[.!?;])', text)
+    classified: List[Tuple[str, str]] = []
+    for part in parts:
+        part = part.strip()
+        if len(part) < 5:
+            continue
+        is_providing  = bool(SCAMMER_PROVIDING_RE.search(part))
+        is_requesting = bool(SCAMMER_REQUESTING_RE.search(part))
+        if is_providing and not is_requesting:
+            ctx = 'PROVIDING'
+        elif is_requesting and not is_providing:
+            ctx = 'REQUESTING'
+        else:
+            ctx = 'NEUTRAL'  # ambiguous or both signals present
+        classified.append((part, ctx))
+    return classified
 
 class IntelExtractor:
 
@@ -293,46 +362,52 @@ class IntelExtractor:
         """Extract all 8 intel types from a single text string."""
         result = IntelResult()
 
-        # ── Phone numbers ────────────────────────────────────────────────
-        # Normalize first so +91-9876543210 / +919876543210 / 9876543210 all collapse to one entry
-        # Key = last 10 digits (the Indian mobile number)
+        # ── Sentence-level context classification ─────────────────────────
+        # Split text into clauses and label each PROVIDING / REQUESTING / NEUTRAL
+        # Used by phone + bank account extraction to avoid false positives
+        sentences = _classify_sentences(text)
+
+        # ── Phone numbers (context-aware) ────────────────────────────────
+        # Skip REQUESTING sentences (scammer asking victim for their own phone)
+        # Normalize: +91-9876543210 / +919876543210 / 9876543210 → same last-10-digit key
         phones: List[str] = []
         seen_last10: set = set()
-        for m in PHONE_RE.finditer(text):
-            normed = _normalise_phone(m.group())
-            if normed:
-                only_digits = re.sub(r'[^\d]', '', normed)
-                last10 = only_digits[-10:]
-                if last10 and last10 not in seen_last10:
-                    seen_last10.add(last10)
-                    phones.append(normed)
+        for sentence, ctx in sentences:
+            if ctx == 'REQUESTING':
+                continue  # e.g. "please share your registered phone number"
+            for m in PHONE_RE.finditer(sentence):
+                normed = _normalise_phone(m.group())
+                if normed:
+                    last10 = re.sub(r'[^\d]', '', normed)[-10:]
+                    if last10 and last10 not in seen_last10:
+                        seen_last10.add(last10)
+                        phones.append(normed)
         result.phoneNumbers = phones
 
-        # ── Bank account numbers ─────────────────────────────────────────
-        accounts = []
-        for m in BANK_CONTEXT_RE.finditer(text):
-            accounts.append(m.group(1))
-        # Keyword BEFORE number
-        bank_keyword_re = re.compile(
-            r"(?:account|bank|acc|a\/c|ifsc)[^.]{0,60}?([0-9]{11,18})",
-            re.IGNORECASE,
-        )
-        for m in bank_keyword_re.finditer(text):
-            accounts.append(m.group(1))
-        # Keyword AFTER number (e.g. "deposit 1234567890123456 to bank account")
-        bank_keyword_after_re = re.compile(
-            r"([0-9]{11,18})[^.]{0,60}?(?:account|bank|acc|a\/c|ifsc)",
-            re.IGNORECASE,
-        )
-        for m in bank_keyword_after_re.finditer(text):
-            accounts.append(m.group(1))
-        # Standalone fallback: any 11-18 digit number not already captured
-        # Covers hackathon fake data like bare "1234567890123456" in messages
+        # ── Bank account numbers (context-aware) ─────────────────────────
+        # Strategy per sentence context:
+        #   PROVIDING  → all patterns including standalone (scammer giving their account)
+        #   NEUTRAL    → keyword context only (not standalone — too risky without clear signal)
+        #   REQUESTING → SKIP entirely (scammer asking victim "send your account number")
+        accounts: List[str] = []
         _phone_digits = {re.sub(r"[^\d]", "", p) for p in result.phoneNumbers}
-        for m in BANK_STANDALONE_RE.finditer(text):
-            candidate = m.group()
-            if candidate not in accounts and candidate not in _phone_digits:
-                accounts.append(candidate)
+        for sentence, ctx in sentences:
+            if ctx == 'REQUESTING':
+                continue
+            # Keyword-contextual patterns: extract from PROVIDING + NEUTRAL
+            for m in BANK_CONTEXT_RE.finditer(sentence):
+                accounts.append(m.group(1))
+            for m in BANK_KEYWORD_BEFORE_RE.finditer(sentence):
+                accounts.append(m.group(1))
+            for m in BANK_KEYWORD_AFTER_RE.finditer(sentence):
+                accounts.append(m.group(1))
+            # Standalone (bare 11-18 digit number): only from PROVIDING sentences
+            # Prevents extracting victim's account number from "confirm your 16-digit number XXXX"
+            if ctx == 'PROVIDING':
+                for m in BANK_STANDALONE_RE.finditer(sentence):
+                    candidate = m.group()
+                    if candidate not in accounts and candidate not in _phone_digits:
+                        accounts.append(candidate)
         result.bankAccounts = _deduplicate(accounts)
 
         # ── UPI IDs ──────────────────────────────────────────────────────
