@@ -4,6 +4,16 @@ An AI-powered honeypot API that engages scammers as a convincing victim persona,
 
 ---
 
+## Tech Stack
+- Python 3.11 / FastAPI + Uvicorn
+- Google Gemini 2.5 Flash (LLM responses + intel extraction)
+- Pydantic v2 (request validation)
+- httpx (async HTTP + callback delivery with retry)
+- Regex NLP (15-type keyword scam detection)
+- Docker (containerized deployment)
+
+---
+
 ## Scoring Targets (100 pts total)
 
 | Category | Max | How We Hit It |

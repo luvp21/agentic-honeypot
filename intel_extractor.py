@@ -494,13 +494,14 @@ class IntelExtractor:
         # Strategy per sentence context:
         #   PROVIDING  → all patterns including standalone (scammer giving their account)
         #   NEUTRAL    → keyword context only (not standalone — too risky without clear signal)
-        #   REQUESTING → SKIP entirely (scammer asking victim "send your account number")
+        #   REQUESTING → keyword context only (scammer may reference a specific account
+        #                number even in "your account XXXX needs verification" phrasing;
+        #                still block bare-standalone to avoid extracting victim's number)
         accounts: List[str] = []
         _phone_digits = {re.sub(r"[^\d]", "", p) for p in result.phoneNumbers}
         for sentence, ctx in sentences:
-            if ctx == 'REQUESTING':
-                continue
-            # Keyword-contextual patterns: extract from PROVIDING + NEUTRAL
+            # Keyword-contextual patterns: always run — a specific 11-18 digit number
+            # after an account keyword is always useful intel regardless of phrasing
             for m in BANK_CONTEXT_RE.finditer(sentence):
                 accounts.append(m.group(1))
             for m in BANK_KEYWORD_BEFORE_RE.finditer(sentence):
@@ -562,6 +563,8 @@ class IntelExtractor:
             if not _email_tld_re.search(uid)
             and uid.lower() not in _email_set
             and uid.lower() not in _email_bases
+            # Remove any UPI ID that is a substring of an extracted email address
+            and not any(uid.lower() in email.lower() for email in result.emailAddresses)
         ])
 
         # ── Phishing / suspicious links ───────────────────────────────────
@@ -633,6 +636,12 @@ class IntelExtractor:
             case_ids.append(m.group(1))
         for m in CASE_STANDALONE_RE.finditer(text):
             case_ids.append(m.group())
+        # Filter: require a letter prefix (≥2 letters at the start) OR ≥8 total digits.
+        # Bare employee-style IDs like "12345" or "12345-678" are excluded.
+        case_ids = [
+            c for c in case_ids
+            if re.search(r'^[A-Za-z]{2,}', c) or len(re.sub(r'\D', '', c)) >= 8
+        ]
         result.caseIds = _clean_case_ids(
             _deduplicate(case_ids), result.phishingLinks, result.bankAccounts
         )

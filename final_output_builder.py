@@ -135,6 +135,20 @@ class FinalOutputBuilder:
         tactics_str = self._summarise_tactics(session.red_flags)
         scam_label  = (session.scam_type or "unknown scam").replace("_", " ")
 
+        # Build dynamic elicitation summary from actual extracted intel
+        _intel = session.intel_store
+        extracted_summary = []
+        if _intel.get("phoneNumbers"):   extracted_summary.append("contact numbers")
+        if _intel.get("bankAccounts"):   extracted_summary.append("bank account numbers")
+        if _intel.get("upiIds"):         extracted_summary.append("UPI IDs")
+        if _intel.get("phishingLinks"):  extracted_summary.append("phishing links")
+        if _intel.get("emailAddresses"): extracted_summary.append("email addresses")
+        if _intel.get("caseIds"):        extracted_summary.append("case references")
+        elicited_str = (
+            f"Agent successfully elicited: {', '.join(extracted_summary)}."
+            if extracted_summary else "No intelligence extracted."
+        )
+
         notes = (
             f"Scam detected: true. "
             f"Scam type: {scam_label}. "
@@ -154,9 +168,7 @@ class FinalOutputBuilder:
             f"Agent asked {q_asked} questions across {turns} turns. "
             f"Investigative questions asked: {inv_q}. "
             f"Elicitation attempts made: {elicit}. "
-            f"Agent elicited scammer identity, contact number, company name, "
-            f"official website, employee ID, case reference, UPI ID, bank account number, "
-            f"IFSC code, supervisor name, and official email address. "
+            f"{elicited_str} "
             f"\n\n"
 
             f"Engagement duration: {duration:.0f} seconds over {total_messages} messages. "
