@@ -21,13 +21,26 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 INVESTIGATIVE_TERMS: List[str] = [
-    "employee id", "staff id", "badge number", "officer id",
+    # Identity probing
+    "employee id", "staff id", "badge number", "officer id", "registration number",
+    "designation", "who are you", "your identity", "verify you",
+    # Organisation probing
     "company name", "organisation", "organization", "department name",
-    "official website", "supervisor", "manager name",
-    "headquarters", "office address", "office location",
+    "official website", "registered", "rbi registered", "trai registered",
+    "government registration", "license number", "branch code",
+    # Hierarchy probing
+    "supervisor", "manager name", "senior officer", "your senior",
+    "reporting officer", "team leader", "your manager",
+    # Case / reference probing
     "case id", "reference number", "ticket number", "complaint id",
+    "filing date", "notice number", "case number", "case reference",
+    # Contact probing
+    "headquarters", "office address", "office location",
     "verification", "callback number", "direct number",
     "authorization number", "confirmation number", "identity",
+    # Red flag surfacing
+    "urgency", "suspicious", "red flag", "seems suspicious",
+    "real agency", "official notice", "written communication",
 ]
 
 
@@ -36,18 +49,30 @@ INVESTIGATIVE_TERMS: List[str] = [
 # ---------------------------------------------------------------------------
 
 ELICITATION_TERMS: List[str] = [
-    "phone number", "contact number", "mobile number",
-    "call back", "call you back", "callback", "direct number",
-    "employee id", "staff id", "badge",
-    "your name", "full name", "your full name",
-    "your location", "company name", "which company",
-    "your email", "your website", "email address", "official email",
-    "office address", "official website",
-    "id number", "contact detail", "reach you",
-    "authorization", "who are you", "which department",
-    "your office", "your supervisor", "supervisor's",
-    # Payment elicitation (turn 6)
+    # Contact details
+    "phone number", "contact number", "mobile number", "your number",
+    "call back", "call you back", "callback", "direct number", "reach you",
+    "your contact", "contact detail", "your mobile",
+    # Identity details
+    "employee id", "staff id", "badge", "officer id", "registration number",
+    "your name", "full name", "your full name", "who are you",
+    "your designation", "your department", "which department",
+    # Organisation details
+    "company name", "which company", "organisation name", "your company",
+    "official website", "your website", "registered name",
+    "government registration", "license number",
+    # Address / location
+    "office address", "your office", "office location", "which city",
+    "your location", "your branch", "branch address",
+    # Hierarchy
+    "your supervisor", "supervisor's", "your manager", "senior officer",
+    "manager's number", "your senior", "team leader",
+    # Written contact
+    "your email", "email address", "official email", "id number",
+    "authorization", "confirmation number",
+    # Payment elicitation (turns 6-7)
     "upi id", "upi", "account number", "bank account", "where should i send",
+    "ifsc", "bank transfer", "account holder",
 ]
 
 

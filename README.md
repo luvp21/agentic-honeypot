@@ -83,27 +83,75 @@ docker run -p 8000:8000 --env-file .env honeypot
 
 ## API Usage
 
+### Authentication
+
+All requests to `POST /api/honeypot/message` require:
+
+```
+x-api-key: <your-api-key>
+```
+
+Returns HTTP 200 always — even on auth failure or malformed input (safe fallback reply returned instead).
+
+---
+
 ### Health check
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-### Send a scam message
-
-```bash
-curl -X POST http://localhost:8000/api/honeypot/message \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
-  -d '{
-    "sessionId": "test-session-001",
-    "message": "Hello, I am calling from RBI. Your account has been suspended. You must verify your KYC immediately or your account will be blocked.",
-    "turn": 1,
-    "isLastTurn": false
-  }'
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": 1708423200.0,
+  "active_sessions": 3,
+  "gemini_available": true
+}
 ```
 
-### Final turn (triggers finalOutput + callback)
+---
+
+### Request format — `POST /api/honeypot/message`
+
+```json
+{
+  "sessionId":           "uuid-v4-string",
+  "message":             { "sender": "scammer", "text": "...", "timestamp": "2025-02-11T10:30:00Z" },
+  "conversationHistory": [
+    { "sender": "scammer", "text": "Previous message", "timestamp": 1708423200000 },
+    { "sender": "user",    "text": "Previous reply",   "timestamp": 1708423220000 }
+  ],
+  "metadata": { "channel": "SMS", "language": "English", "locale": "IN" },
+  "isLastTurn": false
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `sessionId` | string | ✅ | UUID — identifies the conversation |
+| `message` | object \| string | ✅ | `{sender, text, timestamp}` or plain string |
+| `conversationHistory` | array | No | Prior turns — seeded on turn 1 |
+| `metadata` | object | No | `channel`: SMS/WhatsApp/Email/Phone |
+| `isLastTurn` | boolean | No | Set `true` on turn 10 to finalize |
+| `callbackUrl` | string | No | Override GUVI callback URL |
+
+---
+
+### Response format
+
+```json
+{
+  "status":    "success",
+  "reply":     "Oh my, this sounds worrying. Who exactly is calling and what is your employee ID?",
+  "sessionId": "uuid-v4-string",
+  "turn":      1,
+  "isFinal":   false
+}
+```
+
+On the final turn (`isFinal: true`), `finalOutput` is also included:
 
 ```bash
 curl -X POST http://localhost:8000/api/honeypot/message \
@@ -111,11 +159,24 @@ curl -X POST http://localhost:8000/api/honeypot/message \
   -H "x-api-key: your-api-key" \
   -d '{
     "sessionId": "test-session-001",
-    "message": "Please share your OTP now or you will face legal action.",
-    "turn": 10,
+    "message": { "sender": "scammer", "text": "Please share your OTP now or face legal action.", "timestamp": "2025-02-11T10:30:00Z" },
+    "conversationHistory": [],
+    "metadata": { "channel": "SMS", "language": "English", "locale": "IN" },
     "isLastTurn": true
   }'
 ```
+
+---
+
+### Error handling
+
+| Scenario | HTTP Status | Behaviour |
+|---|---|---|
+| Invalid / missing `x-api-key` | 200 | Safe fallback reply returned |
+| Malformed JSON body | 200 | Safe fallback reply returned |
+| Missing required field (`sessionId`) | 200 | Validation error caught, safe reply returned |
+| Internal server error | 200 | Guardrail fallback reply returned |
+| Gemini API timeout | 200 | Rule-based fallback reply used |
 
 ---
 

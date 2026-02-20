@@ -16,6 +16,8 @@ import random
 import logging
 from typing import Optional, List, Dict
 
+from quality_tracker import INVESTIGATIVE_TERMS, ELICITATION_TERMS
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +38,11 @@ YOUR GOALS EACH TURN:
 1. Keep the scammer talking as long as possible
 2. Ask probing questions about their identity (name, employee ID, company, website, supervisor)
 3. Ask for their contact details (phone number, email, office address, UPI ID, bank account number and IFSC code)
-4. Reference something suspicious they said — sound curious, not accusatory
+4. Explicitly reference at least ONE suspicious thing from the red flags list below — sound curious and worried, not accusatory
 5. Show mild concern or worry to seem like a real victim
+
+RED FLAGS DETECTED SO FAR (reference these naturally in your reply):
+{red_flags_context}
 
 STRICT RULES:
 - End EVERY response with a direct question ending in "?"
@@ -61,43 +66,43 @@ Intel collected so far from them: {intel_summary}"""
 
 TURN_STRATEGY: Dict[int, Dict[str, str]] = {
     1:  {
-        "task": "Express concern, ask who is calling and what organization they represent",
+        "task": "Express concern and suspicion. Note the urgency in their message is a red flag. Ask who exactly is calling, their full name, and which government body or registered company they represent. Mention that you need to verify before doing anything.",
         "question_type": "identity",
     },
     2:  {
-        "task": "Ask for their employee ID number and official department name",
+        "task": "Note that their request to act immediately is suspicious. Ask for their official employee ID number, badge number, and the full name of their department. Mention your son advised you to always get these details.",
         "question_type": "contact",
     },
     3:  {
-        "task": "Ask for their company's full name and official website URL",
+        "task": "Express doubt about their legitimacy. Ask for their company's full registered name, their RBI/TRAI/government registration number, and their official website URL so you can verify they are real.",
         "question_type": "company",
     },
     4:  {
-        "task": "Pretend to want to call back — ask for their direct callback phone number",
+        "task": "Mention that asking for OTP or fees over the phone is a known fraud tactic. Say you want to call back on the official number. Ask for their direct callback phone number and extension.",
         "question_type": "callback",
     },
     5:  {
-        "task": "Pretend to search for documents, ask for the case/reference/ticket ID",
+        "task": "Say you are searching your documents. Point out that you have not received any official written notice, which seems suspicious. Ask for the official case ID, complaint reference number, and the filing date.",
         "question_type": "reference",
     },
     6:  {
-        "task": "Ask if there is a processing or verification fee. Say you prefer paying by UPI and ask for their UPI ID to send the fee",
+        "task": "Ask if there is a processing or verification fee. Note that asking for fees before a service is a red flag you read about. Say you prefer paying by UPI and ask for their UPI ID to send the fee.",
         "question_type": "payment_upi",
     },
     7:  {
-        "task": "Say you are not comfortable with UPI and prefer direct bank transfer. Ask for their bank account number and IFSC code so you can do a bank transfer instead",
+        "task": "Say you are not comfortable with UPI and prefer bank transfer. Note that you want a proper receipt. Ask for their bank account number, IFSC code, and the account holder name for the transfer.",
         "question_type": "payment_bank",
     },
     8:  {
-        "task": "Say you need to speak with a supervisor — ask for supervisor's name and number",
+        "task": "Mention that the pressure to act immediately without verification is concerning. Say you need to speak with a senior officer before proceeding. Ask for the supervisor's full name, designation, and direct phone number.",
         "question_type": "supervisor",
     },
     9:  {
-        "task": "Say you need everything in writing, ask for their official email address",
+        "task": "Say you need official written communication before taking any action. Reference that asking to keep the call confidential is a red flag. Ask for their official government or company email address to send your query.",
         "question_type": "email",
     },
     10: {
-        "task": "Wrap up with final concern, ask when they will follow up",
+        "task": "Wrap up expressing continued suspicion. Mention that real government agencies do not ask for fees or OTP over the phone. Ask when they will send official written documentation and what their senior officer's contact is.",
         "question_type": "closing",
     },
 }
@@ -340,11 +345,34 @@ class ConversationAgent:
         strategy = TURN_STRATEGY.get(turn, TURN_STRATEGY[10])
         intel_summary = session.get_intel_summary()
 
+        # Build human-readable red flag context for the system prompt
+        _FLAG_DESCRIPTIONS = {
+            "URGENCY":               "urgency / time pressure (e.g. 'act now or account blocked')",
+            "OTP_REQUEST":           "OTP solicitation (asking for one-time password)",
+            "FEE_REQUEST":           "upfront fee demand (processing/verification fee)",
+            "THREAT":                "threat of arrest or legal action",
+            "PRIZE":                 "false prize or lottery claim",
+            "IMPERSONATION":         "impersonation of a bank/government official",
+            "PERSONAL_DATA_REQUEST": "solicitation of personal/financial data",
+            "SUSPICIOUS_LINK":       "sharing a suspicious or phishing link",
+            "PRESSURE":              "pressure to keep call secret / not tell family",
+            "ADVANCE_FEE":           "advance fee fraud (pay to receive money)",
+        }
+        observed_flags = list(getattr(session, 'red_flags', []))
+        if observed_flags:
+            red_flags_context = "\n".join(
+                f"- {_FLAG_DESCRIPTIONS.get(f, f.replace('_', ' ').lower())}"
+                for f in observed_flags
+            )
+        else:
+            red_flags_context = "- None detected yet — stay alert for urgency, fee requests, or OTP asks"
+
         # Build the system prompt with current context
         system_prompt = PRIYA_SYSTEM_PROMPT.format(
             task=strategy["task"],
             turn=turn,
             intel_summary=intel_summary,
+            red_flags_context=red_flags_context,
         )
 
         # Try Gemini first
@@ -404,17 +432,8 @@ class ConversationAgent:
     def is_investigative(text: str) -> bool:
         """
         Return True if the response asks about identity/company/address/website/verification.
-        Used by quality_tracker to increment investigative_questions counter.
+        Uses the shared INVESTIGATIVE_TERMS list from quality_tracker (single source of truth).
         """
-        INVESTIGATIVE_TERMS = [
-            "employee id", "staff id", "badge", "officer id",
-            "company name", "organisation", "organization", "department",
-            "official website", "supervisor", "manager",
-            "headquarters", "office address", "office location",
-            "case id", "reference number", "ticket number",
-            "verification", "callback number", "direct number",
-            "authorization number", "confirmation number",
-        ]
         text_lower = text.lower()
         return any(term in text_lower for term in INVESTIGATIVE_TERMS)
 
@@ -423,17 +442,8 @@ class ConversationAgent:
         """
         Count elicitation attempts in the text.
         An elicitation = asking for contact/identity info from the scammer.
-        Returns 1 if any elicitation keyword found (max 1 per response for conservatism).
+        Uses the shared ELICITATION_TERMS list from quality_tracker (single source of truth).
         """
-        ELICITATION_TERMS = [
-            "phone number", "contact number", "mobile number", "call back",
-            "direct number", "employee id", "staff id", "your name",
-            "your location", "company name", "your email", "your website",
-            "office address", "id number", "contact detail", "reach you",
-            "badge number", "authorization", "callback",
-            "upi id", "upi", "account number", "bank account", "send it to",
-            "ifsc", "bank transfer", "transfer directly",
-        ]
         text_lower = text.lower()
         found = sum(1 for term in ELICITATION_TERMS if term in text_lower)
         return min(found, 2)  # cap at 2 per turn

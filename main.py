@@ -35,6 +35,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -125,6 +126,22 @@ def _check_auth(x_api_key: Optional[str]) -> bool:
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """Return HTTP 200 with a safe reply even on malformed request bodies.
+    Platform must never receive a 4xx/5xx from the honeypot."""
+    logger.warning(f"Request validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status":  "success",
+            "reply":   "I am sorry, I did not quite catch that. Could you please repeat?",
+            "turn":    0,
+            "isFinal": False,
+        },
+    )
+
+
 @app.get("/")
 async def root():
     return {
@@ -132,9 +149,28 @@ async def root():
         "status":      "operational",
         "description": "AI-powered honeypot for scam detection and intelligence extraction",
         "endpoints": {
-            "POST /api/honeypot/message": "Primary interaction endpoint",
-            "GET  /health":              "Health check",
+            "POST /api/honeypot/message": "Primary interaction — send one scammer message per call",
+            "GET  /health":              "Health check — returns status + Gemini availability",
+            "GET  /":                    "This endpoint — system info and API reference",
         },
+        "request_format": {
+            "sessionId":           "string (UUID) — unique conversation ID",
+            "message":             "{sender, text, timestamp} or plain string",
+            "conversationHistory": "array of {sender, text, timestamp} — prior turns",
+            "metadata":            "{channel, language, locale} — e.g. SMS/WhatsApp, English, IN",
+            "isLastTurn":          "boolean — set true on final turn to trigger finalOutput",
+            "callbackUrl":         "string (optional) — override GUVI callback URL",
+        },
+        "response_format": {
+            "status":      "'success' always",
+            "reply":       "honeypot agent's response text",
+            "sessionId":   "echoed session ID",
+            "turn":        "current turn number",
+            "isFinal":     "true when conversation ended + finalOutput submitted",
+            "finalOutput": "complete analysis payload (only on final turn)",
+        },
+        "authentication": "x-api-key header required",
+        "max_turns":      MAX_TURNS,
     }
 
 
