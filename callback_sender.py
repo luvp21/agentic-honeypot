@@ -92,6 +92,11 @@ class CallbackSender:
         # Save to disk immediately — payload is never lost even if all HTTP retries fail
         self._save_backup(session_id, payload)
 
+        # Log the full payload so it's visible in DO runtime logs
+        logger.info(
+            f"[{session_id}] CALLBACK_PAYLOAD:\n{json.dumps(payload, indent=2, default=str)}"
+        )
+
         if await self._try_with_httpx(session_id, payload):
             return True
 
@@ -131,7 +136,7 @@ class CallbackSender:
                 if response.status_code in (200, 201, 202, 204):
                     logger.info(
                         f"[{session_id}] Callback SUCCESS (attempt {attempt}) "
-                        f"— HTTP {response.status_code}"
+                        f"— HTTP {response.status_code} | response: {response.text[:500]}"
                     )
                     return True
                 elif response.status_code in (429, 500, 502, 503, 504):

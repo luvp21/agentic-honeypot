@@ -27,6 +27,7 @@ Critical design notes:
 """
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -56,6 +57,13 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+def _log_json(tag: str, session_id: str, obj: dict) -> None:
+    """Log a full JSON object to stdout so it appears in DO runtime logs."""
+    try:
+        logger.info(f"[{session_id}] ▼▼▼ {tag} ▼▼▼\n{json.dumps(obj, indent=2, default=str)}\n▲▲▲ END {tag} ▲▲▲")
+    except Exception as e:
+        logger.warning(f"[{session_id}] _log_json({tag}) failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +200,11 @@ async def process_message(
         # Extract the plain message text regardless of format (object or string)
         message_text = request.get_message_text()
 
+        logger.info(
+            f"[{request.sessionId}] ── INCOMING TURN {session.turn_count + 1}/{MAX_TURNS} ──"
+        )
+        logger.info(f"[{request.sessionId}] MSG: {message_text[:300]}")
+
         # ─────────────────────────────────────────────────────────────────
         # 3. PROCESSING DELAY
         # Push engagementDurationSeconds > 180s for full engagement score.
@@ -254,6 +267,14 @@ async def process_message(
         new_intel = intel_extractor.extract(message_text)
         intel_extractor.merge_into_session(session, new_intel)
 
+        # Log what was just extracted this turn
+        extracted_this_turn = {k: v for k, v in new_intel.to_dict().items() if v}
+        if extracted_this_turn:
+            logger.info(f"[{request.sessionId}] INTEL THIS TURN: {json.dumps(extracted_this_turn)}")
+        # Log cumulative intel store
+        cumulative = {k: list(v) for k, v in session.intel_store.items() if v}
+        logger.info(f"[{request.sessionId}] INTEL CUMULATIVE: {json.dumps(cumulative)}")
+
         # ─────────────────────────────────────────────────────────────────
         # 6. RED FLAGS + QUALITY TRACKER UPDATE
         # ─────────────────────────────────────────────────────────────────
@@ -290,7 +311,8 @@ async def process_message(
             f"scam={session.is_scam} | type={session.scam_type} | "
             f"conf={session.confidence_score:.0%} | "
             f"red_flags={len(session.red_flags)} | "
-            f"intel={session.total_intel_count()}"
+            f"intel_total={session.total_intel_count()} | "
+            f"flags_list={list(session.red_flags)}"
         )
 
         # ─────────────────────────────────────────────────────────────────
@@ -302,6 +324,8 @@ async def process_message(
 
         # Validate — guardrails guarantee question + elicitation always present
         _, agent_reply = guardrails.validate_response(agent_reply, current_turn)
+
+        logger.info(f"[{request.sessionId}] AGENT REPLY (turn {current_turn}): {agent_reply[:300]}")
 
         # ─────────────────────────────────────────────────────────────────
         # 9. UPDATE QUALITY COUNTERS FROM RESPONSE
@@ -356,6 +380,9 @@ async def process_message(
             # Note: totalMessagesExchanged = turn_count * 2
             # (1 turn = 1 scammer message + 1 honeypot reply → 10 turns = 20 messages)
             final_payload = final_output_builder.build(session)
+
+            # ── LOG FULL FINAL OUTPUT JSON ─────────────────────────────
+            _log_json("FINAL_OUTPUT_PAYLOAD", session.sessionId, final_payload)
 
             # Mark done before firing background task
             session.state         = SessionState.DONE
