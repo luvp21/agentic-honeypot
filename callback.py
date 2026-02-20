@@ -209,6 +209,10 @@ def send_final_callback(
             f"(Status: {response.status_code})"
         )
         logger.info(f"📥 CALLBACK RESPONSE: {json.dumps(response_json, indent=2)}")
+        print(f"\n{'='*60}")
+        print(f"📥 FINAL CALLBACK RESPONSE [{session_id}] (HTTP {response.status_code})")
+        print(json.dumps(response_json, indent=2))
+        print(f"{'='*60}\n")
 
         # HACKATHON: Log callback success (including response body)
         performance_logger.log_callback(session_id, True, response.status_code, callback_time, response_json)
