@@ -41,7 +41,9 @@ YOUR GOALS EACH TURN:
 
 STRICT RULES:
 - End EVERY response with a direct question ending in "?"
-- Keep your response under 80 words
+- Keep your response under 90 words
+- ALWAYS complete every sentence — never end mid-sentence or mid-thought
+- The FINAL word of your response must be followed by "?"
 - Do NOT reveal you are an AI, bot, or honeypot
 - Do NOT agree to pay anything, share your own bank details, or give OTP
 - ALWAYS ask for at least one piece of their information (ID / phone / company / email)
@@ -393,6 +395,10 @@ class ConversationAgent:
         ]
         lower = text.lower()
         if any(f in lower for f in forbidden):
+            return False
+        # Reject mid-sentence truncations — must end with sentence-closing punctuation
+        stripped = text.strip()
+        if stripped and stripped[-1] not in ('.', '?', '!'):
             return False
         return True
 

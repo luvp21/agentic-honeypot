@@ -113,6 +113,18 @@ SHORTENER_RE  = re.compile(
     r"cutt\.ly|is\.gd|tiny\.cc|s\.id)[/\s][^\s]+",
     re.IGNORECASE,
 )
+# Bare domain (no http/www) — catches things like sbi-security.com in parentheses
+# Looks for word boundary + domain with suspicious pattern (hyphens or non-official TLDs)
+BARE_DOMAIN_RE = re.compile(
+    r"\b([a-zA-Z0-9][a-zA-Z0-9\-]{3,}\.[a-zA-Z]{2,6})\b",
+    re.IGNORECASE,
+)
+# Official domains to exclude from bare domain matching
+_OFFICIAL_DOMAINS = frozenset([
+    "sbi.co.in", "rbi.org.in", "npci.org.in", "incometax.gov.in",
+    "uidai.gov.in", "irctc.co.in", "amazon.in", "flipkart.com",
+    "google.com", "paytm.com", "phonepe.com",
+])
 
 SUSPICIOUS_TLDS = frozenset([
     ".xyz", ".tk", ".ml", ".cf", ".ga", ".pw", ".gq",
@@ -140,6 +152,11 @@ CASE_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 CASE_STANDALONE_RE = re.compile(r"\b[A-Z]{2,5}[-/][0-9]{4,12}\b")
+# Multi-segment IDs like REF-2023-98765, AUTH-2023-45678, CONF-2024-12345
+CASE_COMPOUND_RE = re.compile(
+    r"\b[A-Z]{2,6}-[0-9]{4,10}(?:-[0-9]{3,10})+\b",
+    re.IGNORECASE,
+)
 
 # ── Policy numbers ─────────────────────────────────────────────────────────
 POLICY_CONTEXT_RE = re.compile(
@@ -154,12 +171,14 @@ POLICY_PREFIX_RE = re.compile(
 )
 
 # ── Order / Transaction / Invoice numbers ──────────────────────────────────
+# Require at least one digit in suffix — prevents matching plain English words like 'reference'
 ORDER_PREFIX_RE = re.compile(
-    r"\b(?:ORD|OD|TXN|REF|INV|TXR)[A-Z0-9]{6,15}\b",
+    r"\b(?:ORD|OD|TXN|REF|INV|TXR)(?=[A-Z0-9]*[0-9])[A-Z0-9]{5,15}\b",
     re.IGNORECASE,
 )
+# \b after keyword — prevents 'ref' matching inside 'reference'
 ORDER_CONTEXT_RE = re.compile(
-    r"(?:order|transaction|invoice|txn|ref|receipt|payment)\s*(?:id|no|number|#)?[\s:.\-#]*"
+    r"(?:order|transaction|invoice|txn|ref|receipt|payment)\b\s*(?:id|no|number|#)?[\s:.\-#]*"
     r"([A-Z0-9]{6,20})",
     re.IGNORECASE,
 )
@@ -203,6 +222,50 @@ def _is_phishing_url(url: str) -> bool:
     return True        # In honeypot context, ALL URLs shared by scammers are flagged
 
 
+def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
+    """
+    Post-process extracted case IDs to remove noise:
+    - Bare 4-digit years (e.g. '2023')
+    - Pure-alphabetic entries with no digits (e.g. 'sbi-security')
+    - Entries that are domain names extracted from phishing links
+    - Shorter IDs that are prefixes of longer IDs already in the list
+    """
+    # Build set of domain names from phishing links to exclude
+    domain_parts: set = set()
+    for link in phishing_links:
+        m = re.match(r'(?:https?://|www\.)?([a-zA-Z0-9.\-]+)', link)
+        if m:
+            domain = m.group(1).lower()
+            domain_parts.add(domain)
+            base = re.sub(r'\.[a-z]{2,6}$', '', domain)  # strip TLD
+            domain_parts.add(base)
+
+    cleaned: List[str] = []
+    for cid in ids:
+        # Skip bare 4-digit years
+        if re.match(r'^\d{4}$', cid):
+            continue
+        # Skip pure-alphabetic (no digits) — these are likely domain/word fragments
+        if not re.search(r'\d', cid):
+            continue
+        # Skip domain name fragments
+        if cid.lower() in domain_parts:
+            continue
+        cleaned.append(cid)
+
+    # Remove IDs that are strict prefixes of longer IDs in the same list
+    final: List[str] = []
+    for cid in cleaned:
+        is_prefix = any(
+            other != cid and other.upper().startswith(cid.upper())
+            for other in cleaned
+        )
+        if not is_prefix:
+            final.append(cid)
+
+    return final
+
+
 # ---------------------------------------------------------------------------
 # IntelExtractor class
 # ---------------------------------------------------------------------------
@@ -216,12 +279,17 @@ class IntelExtractor:
         result = IntelResult()
 
         # ── Phone numbers ────────────────────────────────────────────────
-        phones = []
+        # Normalize first so +91-9876543210 and +919876543210 collapse to one entry
+        phones: List[str] = []
+        seen_digits: set = set()
         for m in PHONE_RE.finditer(text):
             normed = _normalise_phone(m.group())
             if normed:
-                phones.append(normed)
-        result.phoneNumbers = _deduplicate(phones)
+                digits_key = re.sub(r'[^\d]', '', normed)
+                if digits_key not in seen_digits:
+                    seen_digits.add(digits_key)
+                    phones.append(normed)
+        result.phoneNumbers = phones
 
         # ── Bank account numbers ─────────────────────────────────────────
         accounts = []
@@ -266,7 +334,12 @@ class IntelExtractor:
             candidate = m.group()
             if candidate not in upi_ids:
                 upi_ids.append(candidate)
-        result.upiIds = _deduplicate(upi_ids)
+        # Remove entries that are full email addresses (have TLD: .com, .in, etc.)
+        # Those belong in emailAddresses, not upiIds
+        _email_tld_re = re.compile(r'@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+        result.upiIds = _deduplicate([
+            uid for uid in upi_ids if not _email_tld_re.search(uid)
+        ])
 
         # ── Email addresses ───────────────────────────────────────────────
         emails = EMAIL_RE.findall(text)
@@ -282,6 +355,17 @@ class IntelExtractor:
                 links.append(url)
         for m in SHORTENER_RE.finditer(text):
             links.append(m.group())
+        # Bare domains (no http/www): sbi-security.com, refund-it-dept.in, etc.
+        # Exclude known-legitimate domains
+        already_in_links = set(u.lower() for u in links)
+        for m in BARE_DOMAIN_RE.finditer(text):
+            domain = m.group(1)
+            if domain.lower() not in _OFFICIAL_DOMAINS and domain.lower() not in already_in_links:
+                # Only flag if it has a suspicious TLD or a hyphen (common in scam domains)
+                tld = '.' + domain.rsplit('.', 1)[-1].lower()
+                has_hyphen = '-' in domain.split('.')[0]
+                if tld in SUSPICIOUS_TLDS or has_hyphen or domain.endswith(('.in', '.org.in')):
+                    links.append(domain)
         # Only keep genuinely suspicious ones
         result.phishingLinks = _deduplicate(
             [u for u in links if _is_phishing_url(u)]
@@ -296,12 +380,15 @@ class IntelExtractor:
                 val = m.group(1) if m.lastindex else m.group()
                 if val:
                     case_ids.append(val)
+        # Multi-segment compound IDs: REF-2023-98765, AUTH-2023-45678, etc.
+        for m in CASE_COMPOUND_RE.finditer(text):
+            case_ids.append(m.group().upper())
         # Fallback: legacy context + standalone patterns
         for m in CASE_CONTEXT_RE.finditer(text):
             case_ids.append(m.group(1))
         for m in CASE_STANDALONE_RE.finditer(text):
             case_ids.append(m.group())
-        result.caseIds = _deduplicate(case_ids)
+        result.caseIds = _clean_case_ids(_deduplicate(case_ids), result.phishingLinks)
 
         # ── Policy numbers ────────────────────────────────────────────────
         policy_nums: List[str] = []
@@ -320,7 +407,10 @@ class IntelExtractor:
             val = m.group(1)
             if len(val) >= 6:
                 order_nums.append(val)
-        result.orderNumbers = _deduplicate(order_nums)
+        # Require at least one digit — filters out word fragments like 'erence'
+        result.orderNumbers = _deduplicate([
+            o for o in order_nums if re.search(r'\d', o)
+        ])
 
         return result
 

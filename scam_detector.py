@@ -425,7 +425,8 @@ PHISHING_URL_PATTERNS: List[str] = [
 # ==========================================================================
 
 CASE_ID_PATTERNS: List[str] = [
-    r"\b(?:HDFC|SBI|ICICI|AXIS|RBI|TRAI|CBI|ED|IRDAI|NPCI|CBDT|LIC)-[A-Z0-9\-]{4,20}\b",
+    # Org-prefixed IDs must have at least one digit (excludes domain names like sbi-security.com)
+    r"\b(?:HDFC|SBI|ICICI|AXIS|RBI|TRAI|CBI|ED|IRDAI|NPCI|CBDT|LIC)-(?=[A-Z0-9\-]*[0-9])[A-Z0-9\-]{4,20}(?!\.[a-z]{2,4})\b",
     r"\b(?:IN-CUST|CBI-TAX|CBI-ED|TRAI-CYBER)-\d{4,10}\b",
     r"\b[A-Z]{2,5}[-/](?:SEC|FRAUD|CASE|REF|COMP)-\d{4,10}\b",
     r"\bCase\s+(?:ID|Ref|Number)[:\s]+([A-Z0-9\-]{6,20})\b",
