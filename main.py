@@ -242,9 +242,17 @@ async def process_message(
                             detection.scam_type = llm_type or detection.scam_type
                             detection.confidence_score = round(llm_conf, 2)
                         detection.is_scam = True
-                        # Merge any extra red flags from LLM
+                        # Merge LLM red flags — accept ONLY known enum keys.
+                        # LLM sometimes returns free-text prose descriptions
+                        # ("Urgency to share personal details...") which pollute
+                        # the redFlags array and inflate the count.
+                        _VALID_FLAG_KEYS = frozenset([
+                            "URGENCY", "OTP_REQUEST", "FEE_REQUEST", "THREAT",
+                            "PRIZE", "IMPERSONATION", "PERSONAL_DATA_REQUEST",
+                            "SUSPICIOUS_LINK", "PRESSURE", "ADVANCE_FEE",
+                        ])
                         for flag in llm_cls.get("red_flags", []):
-                            if flag not in detection.red_flags_detected:
+                            if flag in _VALID_FLAG_KEYS and flag not in detection.red_flags_detected:
                                 detection.red_flags_detected.append(flag)
                         logger.info(
                             f"[{request.sessionId}] LLM refined: type={detection.scam_type} "

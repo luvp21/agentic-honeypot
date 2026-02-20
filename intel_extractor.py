@@ -345,17 +345,25 @@ def _is_phishing_url(url: str) -> bool:
     return True
 
 
-def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
+def _clean_case_ids(
+    ids: List[str],
+    phishing_links: List[str],
+    bank_accounts: Optional[List[str]] = None,
+) -> List[str]:
     """
     Post-process extracted case IDs to remove noise:
     - Bare 4-digit years (e.g. '2023')
     - Pure-alphabetic entries with no digits (e.g. 'sbi-security')
     - Employee/badge ID prefixes (EMP, STAFF, BADGE, etc.)
+    - IFSC codes (format: 4 alpha + '0' + 6 alphanumeric, e.g. FAKE0001234)
     - Entries that are domain names extracted from phishing links
+    - Entries that are already captured as bank account numbers
     - IDs that appear as substrings of longer IDs already in the list
     """
     # Common employee / badge ID prefixes — NOT case IDs
     EMPLOYEE_PREFIXES = frozenset(['EMP', 'STAFF', 'BADGE', 'EID', 'EMPID', 'AGENT'])
+    # IFSC code pattern: 4 alpha + literal '0' + 6 alphanumeric = 11 chars total
+    IFSC_RE = re.compile(r'^[A-Z]{4}0[A-Z0-9]{6}$', re.IGNORECASE)
 
     # Build set of domain names from phishing links to exclude
     domain_parts: set = set()
@@ -366,6 +374,9 @@ def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
             domain_parts.add(domain)
             base = re.sub(r'\.[a-z]{2,6}$', '', domain)  # strip TLD
             domain_parts.add(base)
+
+    # Build set of bank account numbers to exclude from caseIds
+    _bank_set = {b.strip() for b in (bank_accounts or [])}
 
     cleaned: List[str] = []
     for cid in ids:
@@ -378,6 +389,18 @@ def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
         # Skip employee/badge IDs (e.g. EMP12345, STAFF001)
         prefix = re.match(r'^([A-Za-z]+)', cid)
         if prefix and prefix.group(1).upper() in EMPLOYEE_PREFIXES:
+            continue
+        # Skip IFSC codes (e.g. FAKE0001234, HDFC0000123)
+        if IFSC_RE.match(cid):
+            continue
+        # Skip anything already captured as a bank account number,
+        # including digit-only substrings of bank accounts (e.g. 12-digit
+        # prefix of a 16-digit account captured by a too-greedy regex)
+        cid_digits = re.sub(r'[^\d]', '', cid)
+        if cid.strip() in _bank_set or any(
+            cid_digits and cid_digits in re.sub(r'[^\d]', '', b)
+            for b in _bank_set
+        ):
             continue
         # Skip domain name fragments
         if cid.lower() in domain_parts:
@@ -610,7 +633,9 @@ class IntelExtractor:
             case_ids.append(m.group(1))
         for m in CASE_STANDALONE_RE.finditer(text):
             case_ids.append(m.group())
-        result.caseIds = _clean_case_ids(_deduplicate(case_ids), result.phishingLinks)
+        result.caseIds = _clean_case_ids(
+            _deduplicate(case_ids), result.phishingLinks, result.bankAccounts
+        )
 
         # ── Policy numbers ────────────────────────────────────────────────
         policy_nums: List[str] = []
@@ -634,10 +659,12 @@ class IntelExtractor:
                 order_nums.append(val)
         # Require at least one digit — filters out word fragments like 'erence'
         order_nums_clean = [o for o in order_nums if re.search(r'\d', o)]
-        # Remove any IDs that are already captured as caseIds (avoids REF20231234 in both)
+        # Remove any IDs already captured as caseIds or bankAccounts
+        _bank_digits = {re.sub(r'[^\d]', '', b) for b in result.bankAccounts}
         result.orderNumbers = _deduplicate([
             o for o in order_nums_clean
             if o.upper() not in {c.upper() for c in result.caseIds}
+            and re.sub(r'[^\d]', '', o) not in _bank_digits
         ])
 
         return result
