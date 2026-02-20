@@ -452,27 +452,76 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bright now\b",
         r"\bin \d+ minutes?\b",               # "in 5 minutes", "in 2 minutes"
         r"\bdo it now\b",
+        # Still-missing variants found in testing
+        r"\bdo not delay\b",                  # "Do not delay."
+        r"\bwithout delay\b",
+        r"\bexpires? in \d+\b",              # "expires in 10 minutes"
+        r"\boffer expires?\b",               # "offer expires in..."
+        r"\btime.?sensitive\b",
+        r"\brespond now\b",
+        r"\breply now\b",
+        r"\byou must act\b",
     ],
+
 
     "OTP_REQUEST": [
         r"\botp\b", r"\bone.?time password\b", r"\bverification code\b",
         r"\bshare.*otp\b", r"\benter.*otp\b", r"\bsend.*otp\b",
         r"\bconfirmation code\b", r"\bsecurity code\b",
+        # UPI PIN / ATM PIN solicitations — functionally equivalent to OTP in fraud
+        r"\bupi pin\b",                       # "enter your UPI PIN"
+        r"\batm pin\b",
+        r"\benter.*\bpin\b",                  # "enter your 4-digit PIN"
+        r"\bshare.*\bpin\b",                  # "share your PIN"
+        r"\bconfirm.*\bpin\b",               # "confirm your PIN"
+        r"\bmpin\b",                          # mobile banking PIN
+        r"\btransaction password\b",
     ],
+
     "FEE_REQUEST": [
         r"\bsmall fee\b", r"\bprocessing fee\b", r"\bregistration fee\b",
         r"\bpay.*fee\b", r"\badvance payment\b", r"\btoken amount\b",
         r"\bsecurity deposit\b", r"\bactivation fee\b", r"\bjoining fee\b",
         r"\bhandling fee\b", r"\bclearance charge\b", r"\bdocumentation charge\b",
         r"\bverification fee\b", r"\bclearance charges\b",
+        # Delivery / parcel scam fee patterns
+        r"\bredelivery charge\b",             # "pay Rs. 49 redelivery charge"
+        r"\bdelivery charge\b",
+        r"\bshipping charge\b",
+        r"\bcustoms charge\b",
+        r"\bimport charge\b",
+        # Generic amount-based patterns
+        r"\bpay rs\.?\s*\d+\b",             # "pay Rs. 49", "pay Rs.5000"
+        r"\brs\.?\s*\d+.*charge\b",         # "Rs. 49 charge"
+        r"\bpay.*rs\.?\s*\d+\b",            # "please pay Rs. 1000"
+        r"\btax clearance\b",
+        r"\bgst clearance\b",
+        r"\brelease charge\b",
+        r"\bclaim fee\b",
     ],
+
     "THREAT": [
         r"\blegal action\b", r"\barrested?\b", r"\bsuspended?\b",
         r"\bblocked?\b", r"\bpenalty\b", r"\bcourt\b",
         r"\bjail\b", r"\bwarrant\b", r"\bfir\b", r"\bpolice\b",
         r"\bcriminal case\b", r"\bprosecuted?\b", r"\bdisconnected?\b",
         r"\bseized?\b", r"\bfreeze\b",
+        # Customs / money-laundering / parcel scam threats
+        r"\bconfiscation\b",                  # "avoid confiscation"
+        r"\bconfiscated?\b",
+        r"\bmoney laundering\b",              # "suspected money laundering"
+        r"\banti.money laundering\b",
+        r"\bdetained?\b",                     # "package detained"
+        r"\bauctioned?\b",                    # "will be auctioned"
+        r"\bnotice issued\b",
+        r"\bcase registered\b",
+        r"\bcomplaint registered\b",
+        r"\baction will be taken\b",
+        r"\bprosecution\b",
+        r"\bcriminal charges\b",
+        r"\bforcible recovery\b",
     ],
+
     "PRIZE": [
         r"\bwon\b", r"\bwinner\b", r"\blucky draw\b", r"\blucky winner\b",
         r"\bclaim prize\b", r"\baward\b", r"\bcongratulations\b",
@@ -494,6 +543,23 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bofficial\s+(?:representative|executive|officer|team|department)\b",
         r"\bwe are calling from\b",
         r"\bcalling on behalf of\b",
+        # Lottery / prize scam impersonation brands
+        r"\bkbc\b",                           # Kaun Banega Crorepati
+        r"\bkaun banega crorepati\b",
+        r"\bnpci\b",                          # National Payments Corp (UPI fraud)
+        r"\bsebi\b",                          # Securities regulator
+        r"\bamazon\b",
+        r"\bflipkart\b",
+        r"\bpaytm\b",
+        r"\bphonepe\b",
+        r"\bgoogle pay\b",
+        r"\bgpay\b",
+        r"\bairtel\b",
+        r"\bjio\b",
+        r"\bjio rewards?\b",
+        r"\bwhatsapp.*lottery\b",
+        r"\bgoogle.*anniversary\b",           # "Google 25th anniversary"
+        r"\bipl.*(?:jackpot|winner|lucky)\b", # IPL lottery scam
     ],
 
     "PERSONAL_DATA_REQUEST": [
@@ -514,6 +580,14 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bverification pin\b",
         r"\benter.*pin\b",
         r"\bshare.*pin\b",
+        # Remote access tools — sharing device access exposes all personal data
+        r"\banydesk\b",
+        r"\bteamviewer\b",
+        r"\bquicksupport\b",
+        r"\bremote access\b",
+        r"\bremote.*assist\b",
+        r"\bscreen.*shar\b",
+        r"\binstall.*(?:anydesk|teamviewer|remote)\b",
     ],
 
     "SUSPICIOUS_LINK": [
@@ -534,7 +608,23 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\badvance.*required\b", r"\bpay first\b", r"\bprepayment\b",
         r"\bupfront payment\b", r"\bpay before\b", r"\brelease.*funds\b",
         r"\bpay.*to receive\b",
+        # Wildcard variants that appear in real scam scripts
+        r"\bpay.*\bfirst\b",                  # "pay Rs. 3,200 first" (words between)
+        r"\bpay.*\bto claim\b",              # "pay clearance to claim prize"
+        r"\bpay.*\bto release\b",            # "pay to release funds"
+        r"\bpay.*\bbefore.*receiv\b",        # "pay before you receive"
+        r"\bdeposit.*\bfirst\b",             # "deposit amount first"
+        r"\bamount.*\bfirst\b",              # "pay the amount first"
+        r"\brefundable.*deposit\b",
+        r"\bsecurity amount\b",
+        r"\btoken.*\bfee\b",
+        r"\binitial.*payment\b",
+        r"\bpay.*\bto avoid\b",             # "pay Rs.49 to avoid return/penalty"
+        r"\bpay.*\bto prevent\b",           # "pay to prevent disconnection"
+        r"\bpay.*\bto unblock\b",           # "pay to unblock account"
+        r"\bcharge.*\bto.*(?:release|receive|claim)\b",
     ],
+
 }
 
 
