@@ -37,13 +37,17 @@ INVESTIGATIVE_TERMS: List[str] = [
 
 ELICITATION_TERMS: List[str] = [
     "phone number", "contact number", "mobile number",
-    "call back", "callback", "direct number",
+    "call back", "call you back", "callback", "direct number",
     "employee id", "staff id", "badge",
-    "your name", "your location", "company name",
-    "your email", "your website", "office address",
+    "your name", "full name", "your full name",
+    "your location", "company name", "which company",
+    "your email", "your website", "email address", "official email",
+    "office address", "official website",
     "id number", "contact detail", "reach you",
-    "authorization", "who are you", "which company",
-    "which department", "your office", "your supervisor",
+    "authorization", "who are you", "which department",
+    "your office", "your supervisor", "supervisor's",
+    # Payment elicitation (turn 6)
+    "upi id", "upi", "account number", "bank account", "where should i send",
 ]
 
 

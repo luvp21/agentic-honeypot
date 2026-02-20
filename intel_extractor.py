@@ -201,10 +201,18 @@ CASE_CONTEXT_RE = re.compile(
     r"([A-Z]{2,8}[0-9]{4,15}|[A-Z]{0,5}[0-9]{6,12}|[A-Z]{2,5}[-/][0-9]{4,12})",
     re.IGNORECASE,
 )
-CASE_STANDALONE_RE = re.compile(r"\b[A-Z]{2,5}[-/][0-9]{4,12}\b")
+CASE_STANDALONE_RE = re.compile(
+    r"\b(?!(?:TXN|ORD|OD|INV|TXR|REC|PMT|PAY)[-/])[A-Z]{2,5}[-/][0-9]{4,12}\b"
+)
 # Multi-segment IDs like REF-2023-98765, AUTH-2023-45678, CONF-2024-12345
+# Excludes transaction/order prefixes: TXN, ORD, INV, TXR, REC, PMT, PAY
 CASE_COMPOUND_RE = re.compile(
-    r"\b[A-Z]{2,6}-[0-9]{4,10}(?:-[0-9]{3,10})+\b",
+    r"\b(?!(?:TXN|ORD|OD|INV|TXR|REC|PMT|PAY)-)([A-Z]{2,6})-[0-9]{4,10}(?:-[0-9]{3,10})+\b",
+    re.IGNORECASE,
+)
+# Hyphenated transaction/order IDs: TXN-2023-00123, ORD-2024-9876, INV-2023-001
+ORDER_COMPOUND_RE = re.compile(
+    r"\b(?:TXN|ORD|OD|INV|TXR|REC|PMT|PAY)-[0-9A-Z]{4,12}(?:-[0-9A-Z]{3,12})+\b",
     re.IGNORECASE,
 )
 
@@ -257,8 +265,12 @@ def _normalise_phone(raw: str) -> Optional[str]:
 
 
 def _is_phishing_url(url: str) -> bool:
-    """Return True if the URL looks suspicious (all scammer URLs are flagged)."""
+    """Return True if the URL looks suspicious."""
     lower = url.lower()
+    # Extract hostname for official-domain check
+    hostname = re.sub(r'^https?://(www\.)?', '', lower).split('/')[0].rstrip('.')
+    if hostname in _OFFICIAL_DOMAINS:
+        return False   # Legitimate domain — never flag sbi.co.in, rbi.org.in, etc.
     for tld in SUSPICIOUS_TLDS:
         if tld in lower:
             return True
@@ -269,7 +281,7 @@ def _is_phishing_url(url: str) -> bool:
         return True
     if url.startswith("http://"):
         return True    # Non-HTTPS is suspicious
-    return True        # In honeypot context, ALL URLs shared by scammers are flagged
+    return True        # In honeypot context, ALL scammer-shared URLs are flagged
 
 
 def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
@@ -539,6 +551,9 @@ class IntelExtractor:
         order_nums: List[str] = []
         for m in ORDER_PREFIX_RE.finditer(text):
             order_nums.append(m.group())
+        # Hyphenated transaction IDs: TXN-2023-00123, ORD-2024-9876
+        for m in ORDER_COMPOUND_RE.finditer(text):
+            order_nums.append(m.group().upper())
         for m in ORDER_CONTEXT_RE.finditer(text):
             val = m.group(1)
             if len(val) >= 6:
