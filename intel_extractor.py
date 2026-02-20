@@ -638,9 +638,16 @@ class IntelExtractor:
             case_ids.append(m.group())
         # Filter: require a letter prefix (≥2 letters at the start) OR ≥8 total digits.
         # Bare employee-style IDs like "12345" or "12345-678" are excluded.
+        # Additionally: purely numeric strings (no letters at all) with <8 digits are excluded.
         case_ids = [
             c for c in case_ids
-            if re.search(r'^[A-Za-z]{2,}', c) or len(re.sub(r'\D', '', c)) >= 8
+            if (
+                re.search(r'^[A-Za-z]{2,}', c)       # has a letter prefix, OR
+                or len(re.sub(r'\D', '', c)) >= 8     # has ≥8 digits
+            ) and not (
+                not re.search(r'[A-Za-z]', c)         # purely numeric (no letters at all)
+                and len(re.sub(r'\D', '', c)) < 8     # AND fewer than 8 digits
+            )
         ]
         result.caseIds = _clean_case_ids(
             _deduplicate(case_ids), result.phishingLinks, result.bankAccounts
