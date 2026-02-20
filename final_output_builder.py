@@ -161,7 +161,7 @@ class FinalOutputBuilder:
             f"ENGAGEMENT SUMMARY:\n"
             f"  Scammer maintained contact for {turns} turns over {duration:.0f} seconds. "
             f"Agent used turn-based probing strategy (identity -> contact -> company -> "
-            f"callback -> reference -> address -> verification -> supervisor -> email -> closing). "
+            f"callback -> reference -> payment -> verification -> supervisor -> email -> closing). "
             f"All elicitation attempts targeted scammer's verifiable identity details."
         )
 

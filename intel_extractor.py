@@ -101,7 +101,7 @@ BANK_KEYWORD_AFTER_RE = re.compile(
 SCAMMER_PROVIDING_RE = re.compile(
     r"\b(?:"
     r"(?:my|our)\s+(?:number|phone|mobile|contact|email|address|office"
-    r"|website|direct|id|employee|staff|name|supervisor)|"  
+    r"|website|direct|id|employee|staff|name|supervisor)|"
     r"(?:call|reach|contact|email)\s+(?:me|us)\b|"
     r"you\s+can\s+(?:reach|call|contact|email)\s+(?:me|us|at)\b|"
     r"here\s+is\s+my|here'?s\s+my|"
@@ -442,10 +442,20 @@ class IntelExtractor:
 
         # Re-filter UPI IDs: remove full emails AND anything captured as email above
         _email_set = set(e.lower() for e in result.emailAddresses)
+        # Also build a set of email base-parts (before last TLD) for prefix matching:
+        # e.g. "support@fakebank.com" → "support@fakebank"
+        # so a UPI like "support@fakebank" is correctly excluded
+        _email_bases: set = set()
+        for em in _email_set:
+            parts = em.rsplit('.', 1)
+            if len(parts) == 2 and len(parts[1]) <= 4:  # has a TLD
+                _email_bases.add(parts[0])  # e.g. "support@fakebank"
         _email_tld_re = re.compile(r'@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
         result.upiIds = _deduplicate([
             uid for uid in result.upiIds
-            if not _email_tld_re.search(uid) and uid.lower() not in _email_set
+            if not _email_tld_re.search(uid)
+            and uid.lower() not in _email_set
+            and uid.lower() not in _email_bases
         ])
 
         # ── Phishing / suspicious links ───────────────────────────────────
@@ -471,9 +481,30 @@ class IntelExtractor:
                     links.append(domain)
         # Strip trailing punctuation that may be captured as part of URL
         links = [l.rstrip('.,;:)>"\']') for l in links]
+        # Deduplicate by hostname: drop bare domain if https://domain already present
+        # e.g. keep "https://sbi-security.in", discard "sbi-security.in"
+        def _hostname(u: str) -> str:
+            u = re.sub(r'^https?://(www\.)?', '', u.lower())
+            return u.split('/')[0].rstrip('.')
+        seen_hosts: set = set()
+        deduped_links: List[str] = []
+        # First pass: add links WITH a scheme (they take priority)
+        for l in links:
+            if l.startswith('http'):
+                h = _hostname(l)
+                if h not in seen_hosts:
+                    seen_hosts.add(h)
+                    deduped_links.append(l)
+        # Second pass: add bare/www links only if host not yet seen
+        for l in links:
+            if not l.startswith('http'):
+                h = _hostname(l)
+                if h not in seen_hosts:
+                    seen_hosts.add(h)
+                    deduped_links.append(l)
         # Only keep genuinely suspicious ones
         result.phishingLinks = _deduplicate(
-            [u for u in links if _is_phishing_url(u)]
+            [u for u in deduped_links if _is_phishing_url(u)]
         )
 
         # ── Case / Reference IDs ──────────────────────────────────────────
