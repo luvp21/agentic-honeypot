@@ -335,23 +335,14 @@ def _normalise_phone(raw: str) -> Optional[str]:
 
 
 def _is_phishing_url(url: str) -> bool:
-    """Return True if the URL looks suspicious."""
-    lower = url.lower()
-    # Extract hostname for official-domain check
-    hostname = re.sub(r'^https?://(www\.)?', '', lower).split('/')[0].rstrip('.')
-    if hostname in _OFFICIAL_DOMAINS:
-        return False   # Legitimate domain — never flag sbi.co.in, rbi.org.in, etc.
-    for tld in SUSPICIOUS_TLDS:
-        if tld in lower:
-            return True
-    for shortener in KNOWN_SHORTENERS:
-        if shortener in lower:
-            return True
-    if re.match(r"https?://\d{1,3}\.\d{1,3}", url):   # IP-based URL
-        return True
-    if url.startswith("http://"):
-        return True    # Non-HTTPS is suspicious
-    return True        # In honeypot context, ALL scammer-shared URLs are flagged
+    """Return True if the URL looks suspicious.
+
+    In honeypot context ALL URLs shared by scammers are captured as phishing
+    intel.  Impersonation scammers routinely use official-looking domains
+    (e.g. https://sbi.co.in/fraud, https://rbi.org.in/verify) to appear
+    legitimate — the old official-domain exclusion caused them to be missed.
+    """
+    return True
 
 
 def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:

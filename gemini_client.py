@@ -85,13 +85,24 @@ class GeminiClient:
             loop = asyncio.get_event_loop()
 
             def _call() -> str:
-                cfg = genai_types.GenerateContentConfig(
+                cfg_kwargs: dict = dict(
                     temperature=0.7,
                     top_p=0.9,
                     max_output_tokens=max_tokens,
                 )
                 if json_mode:
-                    cfg.response_mime_type = "application/json"
+                    # Force pure JSON output — no markdown fences, no preamble.
+                    cfg_kwargs["response_mime_type"] = "application/json"
+                    # Disable thinking tokens for JSON calls.
+                    # gemini-2.5-flash thinking can corrupt / truncate JSON output
+                    # (seen as 8-char responses or stray words like "haplotype").
+                    try:
+                        cfg_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+                            thinking_budget=0
+                        )
+                    except AttributeError:
+                        pass  # SDK version predates ThinkingConfig
+                cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
                 response = self._client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=full_prompt,
@@ -146,7 +157,7 @@ tech_support, loan_scam, income_tax, refund_scam, insurance>",
   "red_flags": ["<flag1>", "<flag2>"]
 }}"""
 
-        raw = await self.generate(prompt, json_mode=True)
+        raw = await self.generate(prompt, max_tokens=1024, json_mode=True)
         if raw:
             return self._parse_json(raw)
         return None
