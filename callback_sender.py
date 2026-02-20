@@ -1,7 +1,10 @@
 """
 callback_sender.py — POST finalOutput to the GUVI session log endpoint.
 
-Retry policy: 3 attempts with 2-second delay between each.
+Retry policy: up to 10 attempts with exponential backoff (5s, 10s, 20s, 40s…)
+covering ~10 minutes total. Payload is also saved to disk the moment it's ready
+so it is NEVER lost even if all HTTP retries fail.
+
 The callback is fired as a background task (asyncio.create_task) from main.py
 AFTER the final HTTP response has been sent to the platform, avoiding timeouts.
 
@@ -12,6 +15,8 @@ import asyncio
 import json
 import logging
 import os
+import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -20,8 +25,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-CALLBACK_RETRY_COUNT = 3
-CALLBACK_RETRY_DELAY = 2   # seconds between retries
+CALLBACK_RETRY_COUNT     = 10    # up to 10 attempts (~10 min total window)
+CALLBACK_RETRY_BASE_DELAY = 5   # first retry after 5s, doubles each time
+CALLBACK_RETRY_MAX_DELAY  = 120 # cap any single wait at 2 minutes
+CALLBACK_BACKUP_DIR = Path("/tmp/guvi_callback_backup")  # disk safety net
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +89,9 @@ class CallbackSender:
             f"intel_items={self._count_intel(payload)})"
         )
 
+        # Save to disk immediately — payload is never lost even if all HTTP retries fail
+        self._save_backup(session_id, payload)
+
         if await self._try_with_httpx(session_id, payload):
             return True
 
@@ -111,7 +121,7 @@ class CallbackSender:
 
         for attempt in range(1, CALLBACK_RETRY_COUNT + 1):
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=20.0) as client:
                     response = await client.post(
                         self.callback_url,
                         json=payload,
@@ -124,25 +134,33 @@ class CallbackSender:
                         f"— HTTP {response.status_code}"
                     )
                     return True
-                else:
+                elif response.status_code in (429, 500, 502, 503, 504):
+                    # Transient server errors — worth retrying
                     logger.warning(
                         f"[{session_id}] Callback HTTP {response.status_code} "
+                        f"(attempt {attempt}/{CALLBACK_RETRY_COUNT}) — will retry"
+                    )
+                else:
+                    # 4xx client error — no point retrying
+                    logger.error(
+                        f"[{session_id}] Callback fatal HTTP {response.status_code} "
                         f"(attempt {attempt}): {response.text[:200]}"
                     )
+                    return False
 
             except httpx.TimeoutException:
-                logger.warning(f"[{session_id}] Callback timeout (attempt {attempt})")
+                logger.warning(f"[{session_id}] Callback timeout (attempt {attempt}/{CALLBACK_RETRY_COUNT})")
             except httpx.ConnectError as e:
-                logger.warning(f"[{session_id}] Callback connect error (attempt {attempt}): {e}")
+                logger.warning(f"[{session_id}] Callback connect error (attempt {attempt}/{CALLBACK_RETRY_COUNT}): {e}")
             except Exception as e:
-                logger.error(f"[{session_id}] Callback unexpected error (attempt {attempt}): {e}")
+                logger.error(f"[{session_id}] Callback unexpected error (attempt {attempt}/{CALLBACK_RETRY_COUNT}): {e}")
 
             if attempt < CALLBACK_RETRY_COUNT:
-                await asyncio.sleep(CALLBACK_RETRY_DELAY)
+                delay = min(CALLBACK_RETRY_BASE_DELAY * (2 ** (attempt - 1)), CALLBACK_RETRY_MAX_DELAY)
+                logger.info(f"[{session_id}] Retrying callback in {delay}s (attempt {attempt+1}/{CALLBACK_RETRY_COUNT})...")
+                await asyncio.sleep(delay)
 
-        logger.error(
-            f"[{session_id}] All {CALLBACK_RETRY_COUNT} callback attempts failed (httpx)."
-        )
+        logger.error(f"[{session_id}] All {CALLBACK_RETRY_COUNT} httpx attempts failed.")
         return False
 
     # ── urllib fallback (no external dependencies) ────────────────────────────
@@ -175,7 +193,7 @@ class CallbackSender:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
-                    lambda: urllib.request.urlopen(req, timeout=15),
+                    lambda: urllib.request.urlopen(req, timeout=20),
                 )
                 status = response.getcode()
                 if status in (200, 201, 202, 204):
@@ -186,25 +204,44 @@ class CallbackSender:
                     return True
 
             except urllib.error.HTTPError as e:
-                logger.warning(
-                    f"[{session_id}] urllib HTTP error (attempt {attempt}): {e.code} {e.reason}"
-                )
+                if e.code in (429, 500, 502, 503, 504):
+                    logger.warning(
+                        f"[{session_id}] urllib HTTP {e.code} "
+                        f"(attempt {attempt}/{CALLBACK_RETRY_COUNT}) — will retry"
+                    )
+                else:
+                    logger.error(
+                        f"[{session_id}] urllib fatal HTTP {e.code} (attempt {attempt}): {e.reason}"
+                    )
+                    return False
             except urllib.error.URLError as e:
                 logger.warning(
-                    f"[{session_id}] urllib URL error (attempt {attempt}): {e.reason}"
+                    f"[{session_id}] urllib URL error (attempt {attempt}/{CALLBACK_RETRY_COUNT}): {e.reason}"
                 )
             except Exception as e:
-                logger.error(f"[{session_id}] urllib unexpected error (attempt {attempt}): {e}")
+                logger.error(f"[{session_id}] urllib unexpected error (attempt {attempt}/{CALLBACK_RETRY_COUNT}): {e}")
 
             if attempt < CALLBACK_RETRY_COUNT:
-                await asyncio.sleep(CALLBACK_RETRY_DELAY)
+                delay = min(CALLBACK_RETRY_BASE_DELAY * (2 ** (attempt - 1)), CALLBACK_RETRY_MAX_DELAY)
+                logger.info(f"[{session_id}] urllib retry in {delay}s...")
+                await asyncio.sleep(delay)
 
-        logger.error(
-            f"[{session_id}] All {CALLBACK_RETRY_COUNT} callback attempts failed (urllib)."
-        )
+        logger.error(f"[{session_id}] All {CALLBACK_RETRY_COUNT} urllib attempts failed.")
         return False
 
     # ── Helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _save_backup(session_id: str, payload: Dict[str, Any]) -> None:
+        """Write payload to disk immediately — never lose the result even if all HTTP retries fail."""
+        try:
+            CALLBACK_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            ts = int(time.time())
+            path = CALLBACK_BACKUP_DIR / f"{session_id}_{ts}.json"
+            path.write_text(json.dumps(payload, indent=2))
+            logger.info(f"[{session_id}] Payload backed up → {path}")
+        except Exception as e:
+            logger.warning(f"[{session_id}] Could not write disk backup: {e}")
 
     @staticmethod
     def _count_intel(payload: Dict[str, Any]) -> int:
