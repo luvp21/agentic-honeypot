@@ -132,16 +132,16 @@ class FinalOutputBuilder:
             rf_tier = "NONE"
 
         notes = (
-            "╔══════════════════════════════════════════════════════════╗\n"
-            "║           HONEYPOT ENGAGEMENT REPORT                    ║\n"
-            "╚══════════════════════════════════════════════════════════╝\n"
+            "==========================================================\n"
+            "             HONEYPOT ENGAGEMENT REPORT                  \n"
+            "==========================================================\n"
             "\n"
             f"SCAM CLASSIFICATION:\n"
-            f"  Type:        {session.scam_type or 'Unknown Scam'}\n"
-            f"  Confidence:  {conf_pct}\n"
+            f"  Type:         {session.scam_type or 'Unknown Scam'}\n"
+            f"  Confidence:   {conf_pct}\n"
             f"  scamDetected: TRUE\n"
             "\n"
-            f"RED FLAGS IDENTIFIED ({red_flag_count} total — severity: {rf_tier}):\n"
+            f"RED FLAGS IDENTIFIED ({red_flag_count} total - severity: {rf_tier}):\n"
             f"{red_flags_detail}\n"
             "\n"
             f"EXTRACTED INTELLIGENCE:\n"
@@ -160,8 +160,8 @@ class FinalOutputBuilder:
             "\n"
             f"ENGAGEMENT SUMMARY:\n"
             f"  Scammer maintained contact for {turns} turns over {duration:.0f} seconds. "
-            f"Agent used turn-based probing strategy (identity → contact → company → "
-            f"callback → reference → address → verification → supervisor → email → closing). "
+            f"Agent used turn-based probing strategy (identity -> contact -> company -> "
+            f"callback -> reference -> address -> verification -> supervisor -> email -> closing). "
             f"All elicitation attempts targeted scammer's verifiable identity details."
         )
 

@@ -139,6 +139,13 @@ KNOWN_SHORTENERS = frozenset([
 EMAIL_RE = re.compile(
     r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
 )
+# Email-context RE: catches no-TLD handles like scammer.fraud@fakebank
+# when they appear after keywords like "email us at", "contact at", etc.
+EMAIL_CONTEXT_RE = re.compile(
+    r"(?:email|e-mail|mail|contact|reach)\s+(?:us\s+at|me\s+at|at|us|is|address)?[\s:.-]*"
+    r"([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+)",
+    re.IGNORECASE,
+)
 
 # ── Case / Reference IDs ───────────────────────────────────────────────────
 # Compiled from the hardened CASE_ID_PATTERNS exported by scam_detector.py
@@ -227,9 +234,13 @@ def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
     Post-process extracted case IDs to remove noise:
     - Bare 4-digit years (e.g. '2023')
     - Pure-alphabetic entries with no digits (e.g. 'sbi-security')
+    - Employee/badge ID prefixes (EMP, STAFF, BADGE, etc.)
     - Entries that are domain names extracted from phishing links
-    - Shorter IDs that are prefixes of longer IDs already in the list
+    - IDs that appear as substrings of longer IDs already in the list
     """
+    # Common employee / badge ID prefixes — NOT case IDs
+    EMPLOYEE_PREFIXES = frozenset(['EMP', 'STAFF', 'BADGE', 'EID', 'EMPID', 'AGENT'])
+
     # Build set of domain names from phishing links to exclude
     domain_parts: set = set()
     for link in phishing_links:
@@ -245,22 +256,26 @@ def _clean_case_ids(ids: List[str], phishing_links: List[str]) -> List[str]:
         # Skip bare 4-digit years
         if re.match(r'^\d{4}$', cid):
             continue
-        # Skip pure-alphabetic (no digits) — these are likely domain/word fragments
+        # Skip pure-alphabetic (no digits) — likely domain/word fragments
         if not re.search(r'\d', cid):
+            continue
+        # Skip employee/badge IDs (e.g. EMP12345, STAFF001)
+        prefix = re.match(r'^([A-Za-z]+)', cid)
+        if prefix and prefix.group(1).upper() in EMPLOYEE_PREFIXES:
             continue
         # Skip domain name fragments
         if cid.lower() in domain_parts:
             continue
         cleaned.append(cid)
 
-    # Remove IDs that are strict prefixes of longer IDs in the same list
+    # Remove IDs that appear as substrings of longer IDs in the same list
     final: List[str] = []
     for cid in cleaned:
-        is_prefix = any(
-            other != cid and other.upper().startswith(cid.upper())
+        is_substring = any(
+            other != cid and cid.upper() in other.upper()
             for other in cleaned
         )
-        if not is_prefix:
+        if not is_substring:
             final.append(cid)
 
     return final
@@ -279,15 +294,17 @@ class IntelExtractor:
         result = IntelResult()
 
         # ── Phone numbers ────────────────────────────────────────────────
-        # Normalize first so +91-9876543210 and +919876543210 collapse to one entry
+        # Normalize first so +91-9876543210 / +919876543210 / 9876543210 all collapse to one entry
+        # Key = last 10 digits (the Indian mobile number)
         phones: List[str] = []
-        seen_digits: set = set()
+        seen_last10: set = set()
         for m in PHONE_RE.finditer(text):
             normed = _normalise_phone(m.group())
             if normed:
-                digits_key = re.sub(r'[^\d]', '', normed)
-                if digits_key not in seen_digits:
-                    seen_digits.add(digits_key)
+                only_digits = re.sub(r'[^\d]', '', normed)
+                last10 = only_digits[-10:]
+                if last10 and last10 not in seen_last10:
+                    seen_last10.add(last10)
                     phones.append(normed)
         result.phoneNumbers = phones
 
@@ -328,22 +345,33 @@ class IntelExtractor:
             candidate = m.group(1).rstrip(".,;:")
             if candidate and candidate not in upi_ids:
                 upi_ids.append(candidate)
-        # 3. Generic @handle — permissive, no email filter
+        # 3. Generic @handle — permissive
         #    In honeypot context every @handle shared by scammer is intel
         for m in UPI_GENERIC_RE.finditer(text):
             candidate = m.group()
             if candidate not in upi_ids:
                 upi_ids.append(candidate)
-        # Remove entries that are full email addresses (have TLD: .com, .in, etc.)
-        # Those belong in emailAddresses, not upiIds
-        _email_tld_re = re.compile(r'@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
-        result.upiIds = _deduplicate([
-            uid for uid in upi_ids if not _email_tld_re.search(uid)
-        ])
+        # Store raw list; email cross-filter applied after emailAddresses is built below
+        result.upiIds = _deduplicate(upi_ids)
 
         # ── Email addresses ───────────────────────────────────────────────
+        # Standard RE (requires TLD): support@fakebank.com
         emails = EMAIL_RE.findall(text)
+        # EMAIL_CONTEXT_RE: catches no-TLD handles like scammer.fraud@fakebank
+        # when they appear after "email us at", "contact at", etc.
+        for m in EMAIL_CONTEXT_RE.finditer(text):
+            candidate = m.group(1).rstrip(".,;:")
+            if candidate and candidate not in emails:
+                emails.append(candidate)
         result.emailAddresses = _deduplicate(emails)
+
+        # Re-filter UPI IDs: remove full emails AND anything captured as email above
+        _email_set = set(e.lower() for e in result.emailAddresses)
+        _email_tld_re = re.compile(r'@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+        result.upiIds = _deduplicate([
+            uid for uid in result.upiIds
+            if not _email_tld_re.search(uid) and uid.lower() not in _email_set
+        ])
 
         # ── Phishing / suspicious links ───────────────────────────────────
         links: List[str] = []
@@ -366,6 +394,8 @@ class IntelExtractor:
                 has_hyphen = '-' in domain.split('.')[0]
                 if tld in SUSPICIOUS_TLDS or has_hyphen or domain.endswith(('.in', '.org.in')):
                     links.append(domain)
+        # Strip trailing punctuation that may be captured as part of URL
+        links = [l.rstrip('.,;:)>"\']') for l in links]
         # Only keep genuinely suspicious ones
         result.phishingLinks = _deduplicate(
             [u for u in links if _is_phishing_url(u)]
@@ -408,8 +438,11 @@ class IntelExtractor:
             if len(val) >= 6:
                 order_nums.append(val)
         # Require at least one digit — filters out word fragments like 'erence'
+        order_nums_clean = [o for o in order_nums if re.search(r'\d', o)]
+        # Remove any IDs that are already captured as caseIds (avoids REF20231234 in both)
         result.orderNumbers = _deduplicate([
-            o for o in order_nums if re.search(r'\d', o)
+            o for o in order_nums_clean
+            if o.upper() not in {c.upper() for c in result.caseIds}
         ])
 
         return result
