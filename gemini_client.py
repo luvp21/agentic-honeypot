@@ -69,12 +69,15 @@ class GeminiClient:
         system_prompt: Optional[str] = None,
         max_tokens: int = 512,
         json_mode: bool = False,
+        disable_thinking: bool = True,
     ) -> Optional[str]:
         """
-        Generate text from Gemini with an 8-second timeout.
+        Generate text from Gemini with a 15-second timeout.
         Returns None on timeout or error so callers can use fallback.
-        Set json_mode=True for classify_scam / extract_intel_llm to force
-        valid JSON output and prevent truncated/markdown-wrapped responses.
+        json_mode=True  → forces application/json output (no markdown fences).
+        disable_thinking=True (default) → sets thinking_budget=0.
+          Thinking adds latency with zero benefit for all tasks here:
+          JSON extraction, scam classification, and short persona replies.
         """
         if not self._configured:
             return None
@@ -93,9 +96,9 @@ class GeminiClient:
                 if json_mode:
                     # Force pure JSON output — no markdown fences, no preamble.
                     cfg_kwargs["response_mime_type"] = "application/json"
-                    # Disable thinking tokens for JSON calls.
-                    # gemini-2.5-flash thinking can corrupt / truncate JSON output
-                    # (seen as 8-char responses or stray words like "haplotype").
+                if json_mode or disable_thinking:
+                    # Disable thinking tokens: they add latency and can corrupt
+                    # JSON output (seen as 8-char responses or stray words).
                     try:
                         cfg_kwargs["thinking_config"] = genai_types.ThinkingConfig(
                             thinking_budget=0
