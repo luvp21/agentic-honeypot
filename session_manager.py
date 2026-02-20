@@ -5,6 +5,7 @@ MAX_TURNS = 10  (hard platform limit — critical redesign from old 18-19 turn s
 FINALIZE_AT = 9 (prepare finalOutput payload on turn 9, send on turn 10)
 """
 
+import re
 import time
 import uuid
 import logging
@@ -99,12 +100,27 @@ class Session:
         if intel_type not in self.intel_store:
             logger.warning(f"Unknown intel type: {intel_type}")
             return
-        existing = set(self.intel_store[intel_type])
-        for v in values:
-            v = v.strip()
-            if v and v not in existing:
-                self.intel_store[intel_type].append(v)
-                existing.add(v)
+        if intel_type == "phoneNumbers":
+            # Deduplicate by last-10 digits so +919876543210 and +91-9876543210
+            # are treated as the same number (keeps the first-seen form)
+            existing_last10 = {
+                re.sub(r"[^\d]", "", p)[-10:] for p in self.intel_store[intel_type]
+            }
+            for v in values:
+                v = v.strip()
+                if not v:
+                    continue
+                last10 = re.sub(r"[^\d]", "", v)[-10:]
+                if last10 and last10 not in existing_last10:
+                    self.intel_store[intel_type].append(v)
+                    existing_last10.add(last10)
+        else:
+            existing = set(self.intel_store[intel_type])
+            for v in values:
+                v = v.strip()
+                if v and v not in existing:
+                    self.intel_store[intel_type].append(v)
+                    existing.add(v)
 
     def add_red_flag(self, flag: str, turn: int) -> None:
         """Record a red flag if not already seen — preserves first-seen turn."""

@@ -35,7 +35,7 @@ YOUR CHARACTER:
 YOUR GOALS EACH TURN:
 1. Keep the scammer talking as long as possible
 2. Ask probing questions about their identity (name, employee ID, company, website, supervisor)
-3. Ask for their contact details (phone number, email, office address)
+3. Ask for their contact details (phone number, email, office address, UPI ID or bank account number)
 4. Reference something suspicious they said — sound curious, not accusatory
 5. Show mild concern or worry to seem like a real victim
 
@@ -81,8 +81,8 @@ TURN_STRATEGY: Dict[int, Dict[str, str]] = {
         "question_type": "reference",
     },
     6:  {
-        "task": "Express confusion, ask for their office address and city",
-        "question_type": "address",
+        "task": "Ask if there is any processing or verification fee required. Pretend you are willing to pay it and ask for their UPI ID or bank account number where you should send the fee",
+        "question_type": "payment",
     },
     7:  {
         "task": "Ask for a confirmation or authorization number to verify this case",
@@ -258,6 +258,23 @@ FALLBACK_TEMPLATES: Dict[str, List[str]] = {
             "What is your official email ID?"
         ),
     ],
+    "payment": [
+        (
+            "I see, I see. But I have heard these things need a small verification charge. "
+            "Where exactly should I send it? "
+            "Can you give me your UPI ID or bank account number for the transfer?"
+        ),
+        (
+            "Oh dear. My son says to always get payment details before doing anything. "
+            "Is there a processing fee I need to pay? "
+            "What is your UPI ID or account number where I should send it?"
+        ),
+        (
+            "I want to do this properly and not make any mistakes. "
+            "If I have to pay any deposit or fee, where do I send it? "
+            "Can you give me your UPI ID or your bank account number?"
+        ),
+    ],
     "closing": [
         (
             "I am still quite worried about all of this. "
@@ -374,6 +391,7 @@ class ConversationAgent:
             "your location", "company name", "your email", "your website",
             "office address", "id number", "contact detail", "reach you",
             "badge number", "authorization", "callback",
+            "upi id", "upi", "account number", "bank account", "send it to",
         ]
         text_lower = text.lower()
         found = sum(1 for term in ELICITATION_TERMS if term in text_lower)
