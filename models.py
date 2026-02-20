@@ -72,6 +72,8 @@ class MessageRequest(BaseModel):
     message:             Union[MessageContent, str]
     conversationHistory: Optional[List[ConversationEntry]] = None
     metadata:            Optional[RequestMetadata] = None
+    # GUVI evaluation platform sends callbackUrl in the request body
+    callbackUrl:         Optional[str] = None
     # Extra fields kept for backward compatibility / local testing
     turn:                Optional[int]  = None
     isLastTurn:          Optional[bool] = False

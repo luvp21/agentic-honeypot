@@ -363,8 +363,10 @@ async def process_message(
 
             # Fire callback as background task (non-blocking)
             # This ensures we return the HTTP response first, avoiding platform timeout
+            # Use callbackUrl from request body if GUVI provided one, else fall back to env var
+            _callback_url = getattr(request, 'callbackUrl', None) or None
             asyncio.create_task(
-                callback_sender.send_final_output(session.sessionId, final_payload)
+                callback_sender.send_final_output(session.sessionId, final_payload, url=_callback_url)
             )
 
             logger.info(

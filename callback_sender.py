@@ -41,19 +41,35 @@ class CallbackSender:
         self,
         session_id: str,
         payload: Dict[str, Any],
+        url: Optional[str] = None,
     ) -> bool:
         """
         POST the finalOutput payload to the GUVI session log endpoint.
+        `url` overrides the CALLBACK_URL env var (use when GUVI sends callbackUrl in request).
         Retries up to CALLBACK_RETRY_COUNT times on failure.
         Returns True on success, False if all attempts fail.
         """
-        if not self.callback_url:
+        effective_url = url or self.callback_url
+        if not effective_url:
             logger.warning(
                 f"[{session_id}] CALLBACK_URL not configured — skipping callback. "
-                "Set CALLBACK_URL in your .env file."
+                "Set CALLBACK_URL in your .env file or ensure GUVI sends callbackUrl."
             )
             return False
+        # Temporarily override so _try_with_httpx / _try_with_urllib use it
+        original_url = self.callback_url
+        self.callback_url = effective_url
+        try:
+            return await self._do_send(session_id, payload)
+        finally:
+            self.callback_url = original_url
 
+    async def _do_send(
+        self,
+        session_id: str,
+        payload: Dict[str, Any],
+    ) -> bool:
+        """Internal: perform the actual HTTP POST (called after URL is set)."""
         if not payload:
             logger.error(f"[{session_id}] Empty finalOutput payload — callback aborted.")
             return False
