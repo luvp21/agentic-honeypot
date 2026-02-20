@@ -16,9 +16,10 @@ env/
 ENV/
 .venv
 
-# Environment Variables
+# Environment Variables - NEVER COMMIT THESE
 .env
 .env.local
+.env.production
 
 # IDE
 .vscode/
@@ -31,14 +32,24 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs - Don't commit logs
 *.log
 logs/
 server.log
 tunnel.log
+hackathon_performance.log
 
-# Deployment (old)
+# Test outputs
+callback_queue.json
+test_results.json
+
+# Deployment configs (may contain secrets)
 render.yaml
 
-# Project specific
+# Personal notes
 README_PROJECT.md
+notes.md
+TODO.md
+
+# Docker
+.dockerignore
