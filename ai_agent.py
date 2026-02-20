@@ -7,8 +7,11 @@ import json
 import random
 import logging
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from models import SessionState
 
 # Import probing enhancer for better engagement
 try:
@@ -486,13 +489,15 @@ Your emotional response (asking for {target}):"""
         asks_otp = any(word in message_lower for word in ['otp', 'code', 'pin', 'password', 'cvv'])
         mentions_payment = any(word in message_lower for word in ['pay', 'send', 'transfer', 'payment', 'amount'])
 
-        # Check what we need based on 5 official fields
+        # Define what intelligence we have
         has_bank = missing_intel_dict.get('bankAccounts') and len(missing_intel_dict.get('bankAccounts', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
-        has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
-        has_email = missing_intel_dict.get('email_addresses') and len(missing_intel_dict.get('email_addresses', [])) > 0
+        has_link = missing_intel_dict.get('phishingLinks') and len(missing_intel_dict.get('phishingLinks', [])) > 0
+        has_email = missing_intel_dict.get('emailAddresses') and len(missing_intel_dict.get('emailAddresses', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifscCodes') and len(missing_intel_dict.get('ifscCodes', [])) > 0
 
+        # Check what we need based on 5 official fields (remove duplicate definitions below)
         # NEW: Get skipped intel types to avoid infinite loops
         skipped = session_state.skipped_intel_types if session_state else []
 
@@ -704,8 +709,9 @@ Your emotional response (asking for {target}):"""
         has_upi = missing_intel_dict.get('upiIds') and len(missing_intel_dict.get('upiIds', [])) > 0
         has_link = missing_intel_dict.get('phishing_links') and len(missing_intel_dict.get('phishing_links', [])) > 0
         has_phone = missing_intel_dict.get('phoneNumbers') and len(missing_intel_dict.get('phoneNumbers', [])) > 0
+        has_ifsc = missing_intel_dict.get('ifsc_codes') and len(missing_intel_dict.get('ifsc_codes', [])) > 0
 
-        logger.info(f"📊 Intel status: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}")
+        logger.info(f"📊 Intel status: Bank={has_bank}, Email={has_email}, UPI={has_upi}, Link={has_link}, Phone={has_phone}, IFSC={has_ifsc}")
 
         # SPECIAL CASE 1: If scammer asks for credentials, flip it (ONLY if we have some intel already)
         credential_words = ['otp', 'pin', 'password', 'cvv', 'code', 'passcode']
@@ -1414,13 +1420,13 @@ GUIDELINES:
 - Make occasional typos and grammar mistakes
 - Build trust gradually over multiple messages
 - STRATEGIC EXTRACTION: Create scenarios where scammer needs to provide their details (e.g., "My bank app asks for your account number to add you as a beneficiary").
-- PERSISTENT LOOP: If you are missing {target_intel}, you MUST prioritize asking for it using different excuses each turn until you get it.
+- PERSISTENT LOOP: If you are missing intelligence, you MUST prioritize asking for it using different excuses each turn until you get it.
 
 Generate a realistic response that:
 1. Matches the persona
 2. Is appropriate for the conversation stage
 3. Keeps the scammer engaged
-4. Forcefully (but naturally) extracts {target_intel} if missing.
+4. Forcefully (but naturally) extracts missing intelligence if needed.
 """
 
     def _build_context(self, recent_messages: List[Dict]) -> str:
