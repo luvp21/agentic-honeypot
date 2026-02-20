@@ -132,37 +132,39 @@ class FinalOutputBuilder:
             rf_tier = "NONE"
 
         notes = (
-            "==========================================================\n"
-            "             HONEYPOT ENGAGEMENT REPORT                  \n"
-            "==========================================================\n"
-            "\n"
-            f"SCAM CLASSIFICATION:\n"
-            f"  Type:         {session.scam_type or 'Unknown Scam'}\n"
-            f"  Confidence:   {conf_pct}\n"
-            f"  scamDetected: TRUE\n"
-            "\n"
-            f"RED FLAGS IDENTIFIED ({red_flag_count} total - severity: {rf_tier}):\n"
+            f"HONEYPOT ENGAGEMENT REPORT\n"
+            f"{'─' * 42}\n"
+            f"\n"
+            f"Scam Type       : {(session.scam_type or 'Unknown Scam').replace('_', ' ').title()}\n"
+            f"Confidence      : {conf_pct}\n"
+            f"Scam Detected   : Yes\n"
+            f"Severity        : {rf_tier}\n"
+            f"\n"
+            f"Red Flags Found ({red_flag_count}):\n"
             f"{red_flags_detail}\n"
-            "\n"
-            f"EXTRACTED INTELLIGENCE:\n"
+            f"\n"
+            f"Extracted Intelligence:\n"
             f"{intel_summary}\n"
-            "\n"
-            f"CONVERSATION QUALITY METRICS:\n"
-            f"  Total turns:                {turns}\n"
-            f"  Total messages exchanged:   {total_messages}\n"
-            f"  Engagement duration:        {duration:.0f} seconds\n"
-            f"  Questions asked by agent:   {q_asked}\n"
-            f"  Investigative questions:    {inv_q}\n"
-            f"  Elicitation attempts:       {elicit}\n"
-            "\n"
-            f"TACTICS OBSERVED BY SCAMMER:\n"
+            f"\n"
+            f"Scammer Tactics :\n"
             f"  {self._summarise_tactics(session.red_flags)}\n"
-            "\n"
-            f"ENGAGEMENT SUMMARY:\n"
-            f"  Scammer maintained contact for {turns} turns over {duration:.0f} seconds. "
-            f"Agent used turn-based probing strategy (identity -> contact -> company -> "
-            f"callback -> reference -> payment -> verification -> supervisor -> email -> closing). "
-            f"All elicitation attempts targeted scammer's verifiable identity details."
+            f"\n"
+            f"Conversation Stats:\n"
+            f"  Turns           : {turns} / 10\n"
+            f"  Messages        : {total_messages}\n"
+            f"  Duration        : {duration:.0f}s\n"
+            f"  Questions asked : {q_asked}\n"
+            f"  Investigative Q : {inv_q}\n"
+            f"  Elicitations    : {elicit}\n"
+            f"\n"
+            f"Strategy Used:\n"
+            f"  identity → contact → company → callback → reference\n"
+            f"  → payment (UPI) → payment (bank) → supervisor → email → closing\n"
+            f"\n"
+            f"Summary:\n"
+            f"  Scammer engaged for {turns} turns over {duration:.0f} seconds.\n"
+            f"  Agent elicited identity, contact, and financial details\n"
+            f"  using a graduated trust-building approach."
         )
 
         return notes
@@ -174,21 +176,46 @@ class FinalOutputBuilder:
         flags: list,
         flag_turns: dict,
     ) -> str:
+        FLAG_LABELS = {
+            "URGENCY":               "Urgency / time pressure",
+            "OTP_REQUEST":           "OTP request",
+            "FEE_REQUEST":           "Upfront fee demand",
+            "THREAT":                "Threat of arrest / legal action",
+            "PRIZE":                 "False prize / lottery claim",
+            "IMPERSONATION":         "Impersonation of official entity",
+            "PERSONAL_DATA_REQUEST": "Personal / financial data solicitation",
+            "SUSPICIOUS_LINK":       "Suspicious phishing link shared",
+            "PRESSURE":              "Psychological pressure (keep secret)",
+            "ADVANCE_FEE":           "Advance fee fraud",
+        }
         if not flags:
-            return "  No red flags detected."
+            return "  None detected."
         lines = []
         for flag in flags:
             turn = flag_turns.get(flag, "?")
-            lines.append(f"  - {flag} (turn {turn})")
+            label = FLAG_LABELS.get(flag, flag.replace("_", " ").title())
+            lines.append(f"  • {label}  (turn {turn})")
         return "\n".join(lines)
 
     @staticmethod
     def _format_intel(intel_store: dict) -> str:
+        TYPE_LABELS = {
+            "phoneNumbers":   "Phone numbers",
+            "bankAccounts":   "Bank accounts",
+            "upiIds":         "UPI IDs",
+            "phishingLinks":  "Phishing links",
+            "emailAddresses": "Email addresses",
+            "caseIds":        "Case / reference IDs",
+            "policyNumbers":  "Policy numbers",
+            "orderNumbers":   "Order / transaction IDs",
+        }
         lines = []
         for intel_type, values in intel_store.items():
             if values:
-                lines.append(f"  - {intel_type}: {', '.join(values)}")
-        return "\n".join(lines) if lines else "  No explicit personal data extracted."
+                label = TYPE_LABELS.get(intel_type, intel_type)
+                items = ", ".join(values)
+                lines.append(f"  • {label}: {items}")
+        return "\n".join(lines) if lines else "  None extracted."
 
     @staticmethod
     def _summarise_tactics(flags: list) -> str:
