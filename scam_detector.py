@@ -445,7 +445,15 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bwithin \d+ hours?\b", r"\bwithin \d+ minutes?\b", r"\basap\b",
         r"\bno delay\b", r"\btoday only\b", r"\bexpires? (?:today|now|soon)\b",
         r"\blast chance\b", r"\bfinal warning\b", r"\bdeadline\b",
+        # Additional urgency variants for lottery / UPI scam scripts
+        r"\bwithin the next \d+ minutes?\b",  # "within the next 5 minutes"
+        r"\bwithin the next minute\b",
+        r"\bright away\b",
+        r"\bright now\b",
+        r"\bin \d+ minutes?\b",               # "in 5 minutes", "in 2 minutes"
+        r"\bdo it now\b",
     ],
+
     "OTP_REQUEST": [
         r"\botp\b", r"\bone.?time password\b", r"\bverification code\b",
         r"\bshare.*otp\b", r"\benter.*otp\b", r"\bsend.*otp\b",
@@ -478,14 +486,36 @@ RED_FLAG_PATTERNS: Dict[str, List[str]] = {
         r"\bcyber cell\b", r"\bprime minister\b", r"\bnarcotics bureau\b",
         r"\bcid\b", r"\birdai\b", r"\bcbdt\b", r"\buidai\b",
         r"\bmicrosoft\b", r"\bapple support\b",
+        # Additional impersonation patterns for lottery / UPI / rewards scams
+        r"\bverification executive\b",
+        r"\brewards? team\b",
+        r"\bcustomer support\b",
+        r"\b(?:paytm|amazon|google|flipkart|phonepe|gpay|jio|airtel)\s+official\b",
+        r"\bofficial\s+(?:representative|executive|officer|team|department)\b",
+        r"\bwe are calling from\b",
+        r"\bcalling on behalf of\b",
     ],
+
     "PERSONAL_DATA_REQUEST": [
         r"\baccount number\b", r"\baadhaar\b", r"\bpan\b",
         r"\bpassword\b", r"\bcvv\b", r"\bcard number\b",
         r"\bbank details\b", r"\bpersonal details\b",
         r"\bdate of birth\b", r"\bdob\b", r"\bmother.?s name\b",
         r"\bconfirm.*bank\b", r"\bverify.*account\b",
+        # UPI / lottery / OTP specific solicitations
+        r"\bupi id\b",                          # "share your UPI ID"
+        r"\byour upi\b",                        # "what is your UPI"
+        r"\bshare.*upi\b",                      # "share the UPI"
+        r"\btransaction id\b",                  # "provide transaction ID"
+        r"\btransaction pin\b",
+        r"\bregistered mobile\b",               # "registered mobile number"
+        r"\bregistered mobile number\b",
+        r"\bmobile number linked\b",
+        r"\bverification pin\b",
+        r"\benter.*pin\b",
+        r"\bshare.*pin\b",
     ],
+
     "SUSPICIOUS_LINK": [
         r"https?://[^\s]*\.(?:xyz|tk|ml|cf|ga|pw|gq|men|loan|top|click|download)[^\s]*",
         r"https?://[^\s]*(?:bit\.ly|tinyurl|goo\.gl|t\.co|rb\.gy|ow\.ly)[^\s]*",

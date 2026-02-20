@@ -405,6 +405,11 @@ def _clean_case_ids(
         # Skip domain name fragments
         if cid.lower() in domain_parts:
             continue
+        # Skip purely numeric (or numeric-with-hyphens/underscores) IDs with <8 digits
+        # e.g. 4521, 98765, 00123 — but keep 12345678 (8 digits) or REF-2023-9876
+        _only_digits = re.sub(r'[^\d]', '', cid)
+        if not re.search(r'[A-Za-z]', cid) and len(_only_digits) < 8:
+            continue
         cleaned.append(cid)
 
     # Remove IDs that appear as substrings of longer IDs in the same list
@@ -515,7 +520,13 @@ class IntelExtractor:
                     candidate = m.group()
                     if candidate not in accounts and candidate not in _phone_digits:
                         accounts.append(candidate)
-        result.bankAccounts = _deduplicate(accounts)
+        # Strip trailing annotations from each account number.
+        # Raw LLM output can include " (IFSC: FAKE0001234)" or " SBIN0001234" suffixes.
+        # Keep only the leading digit run — Indian account numbers are purely numeric.
+        def _strip_account(raw: str) -> str:
+            m = re.match(r'^\d+', raw.strip())
+            return m.group() if m else raw.strip()
+        result.bankAccounts = _deduplicate([_strip_account(a) for a in accounts])
 
         # ── UPI IDs ──────────────────────────────────────────────────────
         upi_ids: List[str] = []
@@ -636,18 +647,12 @@ class IntelExtractor:
             case_ids.append(m.group(1))
         for m in CASE_STANDALONE_RE.finditer(text):
             case_ids.append(m.group())
-        # Filter: require a letter prefix (≥2 letters at the start) OR ≥8 total digits.
-        # Bare employee-style IDs like "12345" or "12345-678" are excluded.
-        # Additionally: purely numeric strings (no letters at all) with <8 digits are excluded.
+        # Pre-filter: require a letter prefix (≥2 letters at start) OR ≥8 total digits.
+        # Purely numeric/hyphen-only IDs shorter than 8 digits are also caught by
+        # _clean_case_ids below, but excluding them early avoids false dedup collisions.
         case_ids = [
             c for c in case_ids
-            if (
-                re.search(r'^[A-Za-z]{2,}', c)       # has a letter prefix, OR
-                or len(re.sub(r'\D', '', c)) >= 8     # has ≥8 digits
-            ) and not (
-                not re.search(r'[A-Za-z]', c)         # purely numeric (no letters at all)
-                and len(re.sub(r'\D', '', c)) < 8     # AND fewer than 8 digits
-            )
+            if re.search(r'^[A-Za-z]{2,}', c) or len(re.sub(r'\D', '', c)) >= 8
         ]
         result.caseIds = _clean_case_ids(
             _deduplicate(case_ids), result.phishingLinks, result.bankAccounts
