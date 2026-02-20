@@ -261,6 +261,13 @@ async def process_message(
         if detection.confidence_score > session.confidence_score:
             session.confidence_score = detection.confidence_score
 
+        # Accumulate confidence based on total red flags found — each flag = +10% above base
+        # e.g. 5 flags → min(0.95, 0.40 + 5*0.10) = 0.90  (much more honest than 53%)
+        if session.red_flags:
+            accumulated = min(0.95, 0.40 + len(session.red_flags) * 0.10)
+            if accumulated > session.confidence_score:
+                session.confidence_score = round(accumulated, 2)
+
         # ─────────────────────────────────────────────────────────────────
         # 5. INTEL EXTRACTION from incoming message
         # ─────────────────────────────────────────────────────────────────

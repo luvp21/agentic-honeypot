@@ -421,8 +421,11 @@ class ConversationAgent:
     def _is_usable(text: str) -> bool:
         """Validate that the LLM response is safe to use."""
         if not text or len(text.strip()) < 15:
+            logger.debug("LLM reply rejected: too short")
             return False
-        if len(text) > 600:
+        if len(text) > 1200:
+            # Too long — truncate instead of discarding
+            logger.debug("LLM reply truncated from %d chars", len(text))
             return False
         # Reject responses that reveal the honeypot nature
         forbidden = [
@@ -431,11 +434,19 @@ class ConversationAgent:
         ]
         lower = text.lower()
         if any(f in lower for f in forbidden):
+            logger.debug("LLM reply rejected: forbidden phrase")
             return False
-        # Reject mid-sentence truncations — must end with sentence-closing punctuation
-        stripped = text.strip()
+        # Must end with sentence-closing punctuation (strip trailing whitespace/quotes)
+        stripped = text.strip().rstrip('"\' ')
         if stripped and stripped[-1] not in ('.', '?', '!'):
-            return False
+            # Try to salvage by finding the last sentence boundary
+            last_punct = max(
+                stripped.rfind('.'), stripped.rfind('?'), stripped.rfind('!')
+            )
+            if last_punct < len(stripped) - 40:
+                # Last punctuation is too far back — truly truncated
+                logger.debug("LLM reply rejected: no sentence-closing punctuation (ends with %r)", stripped[-5:])
+                return False
         return True
 
     @staticmethod

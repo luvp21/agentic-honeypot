@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 GEMINI_MODEL   = "gemini-2.5-flash"
-LLM_TIMEOUT    = 8   # seconds — leave room for 3s sleep + network latency
+LLM_TIMEOUT    = 15  # seconds — was 8s, but classify + generate can stack up
 MAX_OUTPUT_LEN = 500  # characters — keep replies under 80 words
 
 
@@ -237,20 +237,19 @@ Respond ONLY in valid JSON (use empty arrays if nothing found):
     @staticmethod
     def _parse_json(raw: str) -> Optional[Dict]:
         """Extract and parse the first JSON object found in the LLM response.
-        Handles Gemini 2.5-flash wrapping JSON in ```json ... ``` code fences,
-        and preamble text before the fence.
+        Handles Gemini 2.5-flash wrapping JSON in code fences, adding preamble
+        text, or surrounding JSON with backtick-less markdown.
         """
         if not raw:
             return None
 
-        # 1. Try direct parse (no wrapping at all)
+        # 1. Try direct parse
         try:
             return json.loads(raw.strip())
         except json.JSONDecodeError:
             pass
 
-        # 2. Extract content inside a ```json ... ``` or ``` ... ``` block
-        #    (fence may appear anywhere, not necessarily at the start)
+        # 2. Extract from ```json ... ``` or ``` ... ``` fence
         fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL | re.IGNORECASE)
         if fence_match:
             try:
@@ -258,15 +257,22 @@ Respond ONLY in valid JSON (use empty arrays if nothing found):
             except json.JSONDecodeError:
                 pass
 
-        # 3. Find first complete {...} JSON object in the raw string
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
+        # 3. Slice from first { to last } (handles preamble/postamble text)
+        start = raw.find('{')
+        end   = raw.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            candidate = raw[start:end + 1]
             try:
-                return json.loads(match.group())
+                return json.loads(candidate)
             except json.JSONDecodeError:
-                pass
+                # 4. Last resort: regex to find any {...} block
+                for m in re.finditer(r"\{[^{}]*\}", raw, re.DOTALL):
+                    try:
+                        return json.loads(m.group())
+                    except json.JSONDecodeError:
+                        continue
 
-        logger.warning("Could not parse JSON from LLM response")
+        logger.warning("Could not parse JSON from LLM response (len=%d, preview=%r)", len(raw), raw[:120])
         return None
 
     @staticmethod
